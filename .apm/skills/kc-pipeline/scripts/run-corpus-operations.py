@@ -43,6 +43,7 @@ QUEUE_ORDER = (
     "strong_review",
     "corroboration",
     "source_check",
+    "verification",
     "concepts",
     "impact_audit",
     "apply_changes",
@@ -719,7 +720,11 @@ def queue_name(
         raise OperationsError(
             f"Единица {item.item_id} договора версии 2 должна использовать verification_assessed."
         )
-    if stage in {"source_checked", "rejected", ""}:
+    if stage == "source_checked":
+        if item.item_dir is None or not (item.item_dir / "verification.yml").is_file():
+            return "verification", "внешняя сверка и актуальность снимка не записаны", None
+        return None
+    if stage in {"rejected", ""}:
         return None
     raise OperationsError(
         f"Единица {item.item_id} содержит неизвестную или неподдерживаемую стадию: {stage}"
@@ -1520,7 +1525,7 @@ def read_run_state(path: Path) -> dict[str, Any] | None:
         raise OperationsError(f"Состояние прохода {path} содержит неверные счётчики.")
     queues = data.get("queues")
     if isinstance(queues, dict):
-        for stage in GLOBAL_STAGES:
+        for stage in QUEUE_ORDER:
             queues.setdefault(stage, [])
     if not isinstance(queues, dict) or any(
         not isinstance(queues.get(name), list)

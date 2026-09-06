@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 import subprocess
@@ -49,6 +50,7 @@ def build_corpus(root: Path) -> None:
           - normalized
           - statements_extracted
           - source_checked
+          - verification_assessed
           - blocked
           - rejected
         """,
@@ -123,7 +125,7 @@ def build_corpus(root: Path) -> None:
             workflow_stage: indexed
             processing_scope: selected_fragments
           - id: TEST-V2-COMPLETE
-            title: "Полностью обработанное историческое утверждение"
+            title: "Историческое утверждение без записанной внешней сверки"
             access: "Открытый тестовый источник."
             status: active
             workflow_stage: source_checked
@@ -213,7 +215,7 @@ def build_corpus(root: Path) -> None:
         root / "knowledge" / "data" / "test" / "documents" / "v2-complete" / "item.yml",
         """
         id: TEST-V2-COMPLETE
-        title: "Полностью обработанное историческое утверждение"
+        title: "Историческое утверждение без записанной внешней сверки"
         access: "Открытый тестовый источник."
         status: active
         workflow_stage: source_checked
@@ -725,6 +727,7 @@ def main() -> int:
             "- fetch: 3",
             "- statements: 1",
             "- semantic_review: 1",
+            "- verification: 1",
             "- human_decision: 1",
             "- concepts: 1",
             "- impact_audit: 1",
@@ -735,8 +738,78 @@ def main() -> int:
                 raise AssertionError(f"В плане нет строки: {expected_line}")
         if "TEST-INDEX-ONLY-METADATA" in plan.stdout:
             raise AssertionError("Не выбранная единица index_only не должна образовывать массовую очередь.")
-        if "TEST-V2-COMPLETE" in plan.stdout:
-            raise AssertionError("Слабое историческое утверждение с завершённой обработкой не должно возвращаться в очередь.")
+        if "TEST-V2-COMPLETE" not in plan.stdout or "внешняя сверка и актуальность снимка не записаны" not in plan.stdout:
+            raise AssertionError("Legacy-единица без verification.yml не попала в очередь внешней сверки.")
+        strict_legacy = subprocess.run(
+            [sys.executable, str(VALIDATOR), "knowledge", "--strict-verification"],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if (
+            strict_legacy.returncode != 0
+            or "legacy item has no verification.yml; external verification and freshness are not recorded"
+            not in strict_legacy.stdout
+        ):
+            raise AssertionError("Строгий валидатор не сообщил о legacy-единице без внешней сверки.")
+        legacy_item = root / "knowledge" / "data" / "test" / "documents" / "v2-complete" / "item.yml"
+        legacy_item.write_text(
+            legacy_item.read_text(encoding="utf-8")
+            .replace("workflow_stage: source_checked", "item_contract_version: 2\nworkflow_stage: verification_assessed"),
+            encoding="utf-8",
+        )
+        items_path = root / "knowledge" / "data" / "test" / "items.yml"
+        items_path.write_text(
+            items_path.read_text(encoding="utf-8")
+            .replace("workflow_stage: source_checked\n            path: documents/v2-complete", "item_contract_version: 2\n            workflow_stage: verification_assessed\n            path: documents/v2-complete"),
+            encoding="utf-8",
+        )
+        artifact = legacy_item.parent / "normalized.md"
+        digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        write(
+            legacy_item.parent / "verification.yml",
+            f"""
+            verification_contract_version: 1
+            artifact: normalized.md
+            hash:
+              algorithm: sha256
+              value: {digest}
+            acquisition:
+              method: user_provided
+              recorded_at: 2026-09-06
+            verification:
+              method: no_source_comparison
+              checked_at: 2026-09-06
+              checked_by:
+                role: corpus_maintainer
+              scope:
+                content: full_text
+                metadata: []
+              result:
+                overall: unverified
+                content_match: unverified
+                scope_completeness: complete
+                metadata:
+                  locator: unverified
+                  author: unverified
+                  publication_date: unverified
+              limitations:
+                - Внешняя сверка не выполнена.
+            """,
+        )
+        strict = subprocess.run(
+            [sys.executable, str(VALIDATOR), "knowledge", "--strict-verification"],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if strict.returncode != 0:
+            raise AssertionError(f"Строгий валидатор не принял записанную проверку:\n{strict.stdout}{strict.stderr}")
+        verified_plan = run(root)
+        if "TEST-V2-COMPLETE" in verified_plan.stdout:
+            raise AssertionError("Единица с verification.yml и verification_assessed осталась в очереди.")
         if (root / ".local").exists() or (root / "knowledge" / "index").exists():
             raise AssertionError("Планирование без параметров не должно записывать файлы.")
 

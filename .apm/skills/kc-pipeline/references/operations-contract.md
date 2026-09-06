@@ -149,7 +149,7 @@ python3 .apm/skills/kc-pipeline/scripts/run-corpus-operations.py \
 Имена групп в `stages` для полного прохода совпадают с очередями:
 `content_selection`, `fetch`, `transcribe`, `normalize`, `statements`,
 `traceability`, `semantic_review`, `strong_review`, `corroboration`,
-`source_check`, `concepts`, `impact_audit`, `apply_changes` и
+`source_check`, `verification`, `concepts`, `impact_audit`, `apply_changes` и
 `corpus_validation`.
 Исполнитель может использовать модель, локальный скрипт или внешний сервис,
 но обязан обновить машиночитаемые артефакты корпуса. Если очередь не меняется,
@@ -322,7 +322,7 @@ python3 .apm/skills/kc-pipeline/scripts/run-corpus-operations.py \
 
 Средство использует переносимые очереди `content_selection`, `fetch`,
 `transcribe`, `normalize`, `statements`, `traceability`, `semantic_review`,
-`strong_review`, `corroboration`, `source_check`, `concepts`, `impact_audit`,
+`strong_review`, `corroboration`, `source_check`, `verification`, `concepts`, `impact_audit`,
 `apply_changes`, `corpus_validation` и `human_decision`.
 Штатная стадия `indexed` не считается неподдерживаемой:
 

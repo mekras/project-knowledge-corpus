@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-09-02T18:18:07.870398+00:00'
+generated_at: '2026-09-06T12:08:44.389940+00:00'
 apm_version: 0.29.0
 dependencies:
 - repo_url: mekras/apm-marketplace
@@ -2201,15 +2201,15 @@ dependencies:
     .agents/skills/kc-normalization/evals/result-scenarios.json: sha256:211e8c540a585b2df1a15475f64ad0c0980a257416b14d9c68c00a4ac942b5e6
     .agents/skills/kc-normalization/evals/triggers.json: sha256:0f6da208e3148d33b4f0efbaace94747be2b2052b9e79223aebdad9379cd9e10
     .agents/skills/kc-pipeline/README.md: sha256:12136bc7338e4815bc0513e1ee647f8e29288c228e3ee24ab4c146aee82b8a87
-    .agents/skills/kc-pipeline/SKILL.md: sha256:e42d48c346a37eba0f2c02fd76ba3da55f29f96a5975798253bb710a6b602355
+    .agents/skills/kc-pipeline/SKILL.md: sha256:6eb1b41bdd6ab9928d41f518e64e93ad97aa9cde7bd00ea6059fbbf019aade11
     .agents/skills/kc-pipeline/agents/openai.yaml: sha256:c0a5d03d883075121cd931936d0c0dc8144fb27abc4f69fbc1d5bc80841d4d40
-    .agents/skills/kc-pipeline/assets/operations.yml: sha256:1430f9391f30b67fe4e754f195f9b99384f9c4d0a5dff7dcfadfbbd96bfa3a4a
+    .agents/skills/kc-pipeline/assets/operations.yml: sha256:81e7e3ae1704407882da3e89ddcb876c240a8c670a23cc2d91fd1b886f3dcd1d
     .agents/skills/kc-pipeline/evals/result-scenarios.json: sha256:7a46e262f5bb0e66bb602b0942f795dc4740610a9b40fe0febe8ad349d210b25
     .agents/skills/kc-pipeline/evals/triggers.json: sha256:f1554f245038647b36ba54d60e658038c8f3df7d30d84014086a209bbec0d78e
     .agents/skills/kc-pipeline/references/adapter-contract.md: sha256:af7cc7032a47318a7b2c0908143c9f1a5f27a804cb11dbdfe300432a8bad32dc
-    .agents/skills/kc-pipeline/references/operations-contract.md: sha256:10797132a100eb4ce4f1b3547fd208eddb883bb4a85cdcaa6e11ff8eab4e92e5
-    .agents/skills/kc-pipeline/references/workflow-contract.md: sha256:9bad9be76a0f8126e76c9643c4bef42db9a5bec92c128533c9baa109c35e3168
-    .agents/skills/kc-pipeline/scripts/run-corpus-operations.py: sha256:c15bf29c3d351aa5f3d5cdb50152635e21f81b17745e7af881c65084c2ad2034
+    .agents/skills/kc-pipeline/references/operations-contract.md: sha256:896324ec042b9aedb07099ce637210926dc70c474a20e822860b7ce8edb02c4a
+    .agents/skills/kc-pipeline/references/workflow-contract.md: sha256:e83807033198e3d7d55209ca037bed3dce4f68bcc10855cf4124adf005125ca5
+    .agents/skills/kc-pipeline/scripts/run-corpus-operations.py: sha256:08b965651853f4d12aaafe422e3f1c175f9a38ddd95fc289bc6b9aac1812459a
     .agents/skills/kc-retrieval-evaluation/README.md: sha256:5eeebad995868818f917732970acba27433102ecdcc6e96c85a79a1e0a12f546
     .agents/skills/kc-retrieval-evaluation/SKILL.md: sha256:b7f52e646243d845394abb587279c19e60b8f0d0efc15414d87af4e7ee387ea4
     .agents/skills/kc-retrieval-evaluation/agents/openai.yaml: sha256:381585c695118708ae6efdf6c6b8fe1ddb148948e7d8ab8b4fcbce4bab44a067
@@ -2311,15 +2311,15 @@ dependencies:
     .claude/skills/kc-normalization/evals/result-scenarios.json: sha256:211e8c540a585b2df1a15475f64ad0c0980a257416b14d9c68c00a4ac942b5e6
     .claude/skills/kc-normalization/evals/triggers.json: sha256:0f6da208e3148d33b4f0efbaace94747be2b2052b9e79223aebdad9379cd9e10
     .claude/skills/kc-pipeline/README.md: sha256:12136bc7338e4815bc0513e1ee647f8e29288c228e3ee24ab4c146aee82b8a87
-    .claude/skills/kc-pipeline/SKILL.md: sha256:e42d48c346a37eba0f2c02fd76ba3da55f29f96a5975798253bb710a6b602355
+    .claude/skills/kc-pipeline/SKILL.md: sha256:6eb1b41bdd6ab9928d41f518e64e93ad97aa9cde7bd00ea6059fbbf019aade11
     .claude/skills/kc-pipeline/agents/openai.yaml: sha256:c0a5d03d883075121cd931936d0c0dc8144fb27abc4f69fbc1d5bc80841d4d40
-    .claude/skills/kc-pipeline/assets/operations.yml: sha256:1430f9391f30b67fe4e754f195f9b99384f9c4d0a5dff7dcfadfbbd96bfa3a4a
+    .claude/skills/kc-pipeline/assets/operations.yml: sha256:81e7e3ae1704407882da3e89ddcb876c240a8c670a23cc2d91fd1b886f3dcd1d
     .claude/skills/kc-pipeline/evals/result-scenarios.json: sha256:7a46e262f5bb0e66bb602b0942f795dc4740610a9b40fe0febe8ad349d210b25
     .claude/skills/kc-pipeline/evals/triggers.json: sha256:f1554f245038647b36ba54d60e658038c8f3df7d30d84014086a209bbec0d78e
     .claude/skills/kc-pipeline/references/adapter-contract.md: sha256:af7cc7032a47318a7b2c0908143c9f1a5f27a804cb11dbdfe300432a8bad32dc
-    .claude/skills/kc-pipeline/references/operations-contract.md: sha256:10797132a100eb4ce4f1b3547fd208eddb883bb4a85cdcaa6e11ff8eab4e92e5
-    .claude/skills/kc-pipeline/references/workflow-contract.md: sha256:9bad9be76a0f8126e76c9643c4bef42db9a5bec92c128533c9baa109c35e3168
-    .claude/skills/kc-pipeline/scripts/run-corpus-operations.py: sha256:c15bf29c3d351aa5f3d5cdb50152635e21f81b17745e7af881c65084c2ad2034
+    .claude/skills/kc-pipeline/references/operations-contract.md: sha256:896324ec042b9aedb07099ce637210926dc70c474a20e822860b7ce8edb02c4a
+    .claude/skills/kc-pipeline/references/workflow-contract.md: sha256:e83807033198e3d7d55209ca037bed3dce4f68bcc10855cf4124adf005125ca5
+    .claude/skills/kc-pipeline/scripts/run-corpus-operations.py: sha256:08b965651853f4d12aaafe422e3f1c175f9a38ddd95fc289bc6b9aac1812459a
     .claude/skills/kc-retrieval-evaluation/README.md: sha256:5eeebad995868818f917732970acba27433102ecdcc6e96c85a79a1e0a12f546
     .claude/skills/kc-retrieval-evaluation/SKILL.md: sha256:b7f52e646243d845394abb587279c19e60b8f0d0efc15414d87af4e7ee387ea4
     .claude/skills/kc-retrieval-evaluation/agents/openai.yaml: sha256:381585c695118708ae6efdf6c6b8fe1ddb148948e7d8ab8b4fcbce4bab44a067
@@ -7281,7 +7281,7 @@ deployments:
   - mekras/apm-marketplace/packages/project-knowledge-corpus
   - .
   active_owner: mekras/apm-marketplace/packages/project-knowledge-corpus
-  content_hash: sha256:e42d48c346a37eba0f2c02fd76ba3da55f29f96a5975798253bb710a6b602355
+  content_hash: sha256:6eb1b41bdd6ab9928d41f518e64e93ad97aa9cde7bd00ea6059fbbf019aade11
 - kind: project-relative
   target: claude
   value: .claude/skills/kc-pipeline/agents/openai.yaml
@@ -7301,7 +7301,7 @@ deployments:
   - mekras/apm-marketplace/packages/project-knowledge-corpus
   - .
   active_owner: mekras/apm-marketplace/packages/project-knowledge-corpus
-  content_hash: sha256:1430f9391f30b67fe4e754f195f9b99384f9c4d0a5dff7dcfadfbbd96bfa3a4a
+  content_hash: sha256:81e7e3ae1704407882da3e89ddcb876c240a8c670a23cc2d91fd1b886f3dcd1d
 - kind: project-relative
   target: claude
   value: .claude/skills/kc-pipeline/evals/result-scenarios.json
@@ -7341,7 +7341,7 @@ deployments:
   - mekras/apm-marketplace/packages/project-knowledge-corpus
   - .
   active_owner: mekras/apm-marketplace/packages/project-knowledge-corpus
-  content_hash: sha256:10797132a100eb4ce4f1b3547fd208eddb883bb4a85cdcaa6e11ff8eab4e92e5
+  content_hash: sha256:896324ec042b9aedb07099ce637210926dc70c474a20e822860b7ce8edb02c4a
 - kind: project-relative
   target: claude
   value: .claude/skills/kc-pipeline/references/workflow-contract.md
@@ -7351,7 +7351,7 @@ deployments:
   - mekras/apm-marketplace/packages/project-knowledge-corpus
   - .
   active_owner: mekras/apm-marketplace/packages/project-knowledge-corpus
-  content_hash: sha256:9bad9be76a0f8126e76c9643c4bef42db9a5bec92c128533c9baa109c35e3168
+  content_hash: sha256:e83807033198e3d7d55209ca037bed3dce4f68bcc10855cf4124adf005125ca5
 - kind: project-relative
   target: claude
   value: .claude/skills/kc-pipeline/scripts/run-corpus-operations.py
@@ -7361,7 +7361,7 @@ deployments:
   - mekras/apm-marketplace/packages/project-knowledge-corpus
   - .
   active_owner: mekras/apm-marketplace/packages/project-knowledge-corpus
-  content_hash: sha256:c15bf29c3d351aa5f3d5cdb50152635e21f81b17745e7af881c65084c2ad2034
+  content_hash: sha256:08b965651853f4d12aaafe422e3f1c175f9a38ddd95fc289bc6b9aac1812459a
 - kind: project-relative
   target: claude
   value: .claude/skills/kc-retrieval-evaluation
@@ -12913,7 +12913,7 @@ deployments:
   - mekras/apm-marketplace/packages/project-knowledge-corpus
   - .
   active_owner: mekras/apm-marketplace/packages/project-knowledge-corpus
-  content_hash: sha256:e42d48c346a37eba0f2c02fd76ba3da55f29f96a5975798253bb710a6b602355
+  content_hash: sha256:6eb1b41bdd6ab9928d41f518e64e93ad97aa9cde7bd00ea6059fbbf019aade11
 - kind: project-relative
   target: codex
   value: .agents/skills/kc-pipeline/agents/openai.yaml
@@ -12933,7 +12933,7 @@ deployments:
   - mekras/apm-marketplace/packages/project-knowledge-corpus
   - .
   active_owner: mekras/apm-marketplace/packages/project-knowledge-corpus
-  content_hash: sha256:1430f9391f30b67fe4e754f195f9b99384f9c4d0a5dff7dcfadfbbd96bfa3a4a
+  content_hash: sha256:81e7e3ae1704407882da3e89ddcb876c240a8c670a23cc2d91fd1b886f3dcd1d
 - kind: project-relative
   target: codex
   value: .agents/skills/kc-pipeline/evals/result-scenarios.json
@@ -12973,7 +12973,7 @@ deployments:
   - mekras/apm-marketplace/packages/project-knowledge-corpus
   - .
   active_owner: mekras/apm-marketplace/packages/project-knowledge-corpus
-  content_hash: sha256:10797132a100eb4ce4f1b3547fd208eddb883bb4a85cdcaa6e11ff8eab4e92e5
+  content_hash: sha256:896324ec042b9aedb07099ce637210926dc70c474a20e822860b7ce8edb02c4a
 - kind: project-relative
   target: codex
   value: .agents/skills/kc-pipeline/references/workflow-contract.md
@@ -12983,7 +12983,7 @@ deployments:
   - mekras/apm-marketplace/packages/project-knowledge-corpus
   - .
   active_owner: mekras/apm-marketplace/packages/project-knowledge-corpus
-  content_hash: sha256:9bad9be76a0f8126e76c9643c4bef42db9a5bec92c128533c9baa109c35e3168
+  content_hash: sha256:e83807033198e3d7d55209ca037bed3dce4f68bcc10855cf4124adf005125ca5
 - kind: project-relative
   target: codex
   value: .agents/skills/kc-pipeline/scripts/run-corpus-operations.py
@@ -12993,7 +12993,7 @@ deployments:
   - mekras/apm-marketplace/packages/project-knowledge-corpus
   - .
   active_owner: mekras/apm-marketplace/packages/project-knowledge-corpus
-  content_hash: sha256:c15bf29c3d351aa5f3d5cdb50152635e21f81b17745e7af881c65084c2ad2034
+  content_hash: sha256:08b965651853f4d12aaafe422e3f1c175f9a38ddd95fc289bc6b9aac1812459a
 - kind: project-relative
   target: codex
   value: .agents/skills/kc-retrieval-evaluation
@@ -14304,15 +14304,15 @@ local_deployed_file_hashes:
   .agents/skills/kc-normalization/evals/result-scenarios.json: sha256:211e8c540a585b2df1a15475f64ad0c0980a257416b14d9c68c00a4ac942b5e6
   .agents/skills/kc-normalization/evals/triggers.json: sha256:0f6da208e3148d33b4f0efbaace94747be2b2052b9e79223aebdad9379cd9e10
   .agents/skills/kc-pipeline/README.md: sha256:12136bc7338e4815bc0513e1ee647f8e29288c228e3ee24ab4c146aee82b8a87
-  .agents/skills/kc-pipeline/SKILL.md: sha256:e42d48c346a37eba0f2c02fd76ba3da55f29f96a5975798253bb710a6b602355
+  .agents/skills/kc-pipeline/SKILL.md: sha256:6eb1b41bdd6ab9928d41f518e64e93ad97aa9cde7bd00ea6059fbbf019aade11
   .agents/skills/kc-pipeline/agents/openai.yaml: sha256:c0a5d03d883075121cd931936d0c0dc8144fb27abc4f69fbc1d5bc80841d4d40
-  .agents/skills/kc-pipeline/assets/operations.yml: sha256:1430f9391f30b67fe4e754f195f9b99384f9c4d0a5dff7dcfadfbbd96bfa3a4a
+  .agents/skills/kc-pipeline/assets/operations.yml: sha256:81e7e3ae1704407882da3e89ddcb876c240a8c670a23cc2d91fd1b886f3dcd1d
   .agents/skills/kc-pipeline/evals/result-scenarios.json: sha256:7a46e262f5bb0e66bb602b0942f795dc4740610a9b40fe0febe8ad349d210b25
   .agents/skills/kc-pipeline/evals/triggers.json: sha256:f1554f245038647b36ba54d60e658038c8f3df7d30d84014086a209bbec0d78e
   .agents/skills/kc-pipeline/references/adapter-contract.md: sha256:af7cc7032a47318a7b2c0908143c9f1a5f27a804cb11dbdfe300432a8bad32dc
-  .agents/skills/kc-pipeline/references/operations-contract.md: sha256:10797132a100eb4ce4f1b3547fd208eddb883bb4a85cdcaa6e11ff8eab4e92e5
-  .agents/skills/kc-pipeline/references/workflow-contract.md: sha256:9bad9be76a0f8126e76c9643c4bef42db9a5bec92c128533c9baa109c35e3168
-  .agents/skills/kc-pipeline/scripts/run-corpus-operations.py: sha256:c15bf29c3d351aa5f3d5cdb50152635e21f81b17745e7af881c65084c2ad2034
+  .agents/skills/kc-pipeline/references/operations-contract.md: sha256:896324ec042b9aedb07099ce637210926dc70c474a20e822860b7ce8edb02c4a
+  .agents/skills/kc-pipeline/references/workflow-contract.md: sha256:e83807033198e3d7d55209ca037bed3dce4f68bcc10855cf4124adf005125ca5
+  .agents/skills/kc-pipeline/scripts/run-corpus-operations.py: sha256:08b965651853f4d12aaafe422e3f1c175f9a38ddd95fc289bc6b9aac1812459a
   .agents/skills/kc-retrieval-evaluation/README.md: sha256:5eeebad995868818f917732970acba27433102ecdcc6e96c85a79a1e0a12f546
   .agents/skills/kc-retrieval-evaluation/SKILL.md: sha256:b7f52e646243d845394abb587279c19e60b8f0d0efc15414d87af4e7ee387ea4
   .agents/skills/kc-retrieval-evaluation/agents/openai.yaml: sha256:381585c695118708ae6efdf6c6b8fe1ddb148948e7d8ab8b4fcbce4bab44a067
@@ -14416,15 +14416,15 @@ local_deployed_file_hashes:
   .claude/skills/kc-normalization/evals/result-scenarios.json: sha256:211e8c540a585b2df1a15475f64ad0c0980a257416b14d9c68c00a4ac942b5e6
   .claude/skills/kc-normalization/evals/triggers.json: sha256:0f6da208e3148d33b4f0efbaace94747be2b2052b9e79223aebdad9379cd9e10
   .claude/skills/kc-pipeline/README.md: sha256:12136bc7338e4815bc0513e1ee647f8e29288c228e3ee24ab4c146aee82b8a87
-  .claude/skills/kc-pipeline/SKILL.md: sha256:e42d48c346a37eba0f2c02fd76ba3da55f29f96a5975798253bb710a6b602355
+  .claude/skills/kc-pipeline/SKILL.md: sha256:6eb1b41bdd6ab9928d41f518e64e93ad97aa9cde7bd00ea6059fbbf019aade11
   .claude/skills/kc-pipeline/agents/openai.yaml: sha256:c0a5d03d883075121cd931936d0c0dc8144fb27abc4f69fbc1d5bc80841d4d40
-  .claude/skills/kc-pipeline/assets/operations.yml: sha256:1430f9391f30b67fe4e754f195f9b99384f9c4d0a5dff7dcfadfbbd96bfa3a4a
+  .claude/skills/kc-pipeline/assets/operations.yml: sha256:81e7e3ae1704407882da3e89ddcb876c240a8c670a23cc2d91fd1b886f3dcd1d
   .claude/skills/kc-pipeline/evals/result-scenarios.json: sha256:7a46e262f5bb0e66bb602b0942f795dc4740610a9b40fe0febe8ad349d210b25
   .claude/skills/kc-pipeline/evals/triggers.json: sha256:f1554f245038647b36ba54d60e658038c8f3df7d30d84014086a209bbec0d78e
   .claude/skills/kc-pipeline/references/adapter-contract.md: sha256:af7cc7032a47318a7b2c0908143c9f1a5f27a804cb11dbdfe300432a8bad32dc
-  .claude/skills/kc-pipeline/references/operations-contract.md: sha256:10797132a100eb4ce4f1b3547fd208eddb883bb4a85cdcaa6e11ff8eab4e92e5
-  .claude/skills/kc-pipeline/references/workflow-contract.md: sha256:9bad9be76a0f8126e76c9643c4bef42db9a5bec92c128533c9baa109c35e3168
-  .claude/skills/kc-pipeline/scripts/run-corpus-operations.py: sha256:c15bf29c3d351aa5f3d5cdb50152635e21f81b17745e7af881c65084c2ad2034
+  .claude/skills/kc-pipeline/references/operations-contract.md: sha256:896324ec042b9aedb07099ce637210926dc70c474a20e822860b7ce8edb02c4a
+  .claude/skills/kc-pipeline/references/workflow-contract.md: sha256:e83807033198e3d7d55209ca037bed3dce4f68bcc10855cf4124adf005125ca5
+  .claude/skills/kc-pipeline/scripts/run-corpus-operations.py: sha256:08b965651853f4d12aaafe422e3f1c175f9a38ddd95fc289bc6b9aac1812459a
   .claude/skills/kc-retrieval-evaluation/README.md: sha256:5eeebad995868818f917732970acba27433102ecdcc6e96c85a79a1e0a12f546
   .claude/skills/kc-retrieval-evaluation/SKILL.md: sha256:b7f52e646243d845394abb587279c19e60b8f0d0efc15414d87af4e7ee387ea4
   .claude/skills/kc-retrieval-evaluation/agents/openai.yaml: sha256:381585c695118708ae6efdf6c6b8fe1ddb148948e7d8ab8b4fcbce4bab44a067

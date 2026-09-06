@@ -44,7 +44,7 @@ stages:
         required: true
   # Для --run-pipeline добавьте исполнители по именам очередей:
   # content_selection, fetch, transcribe, normalize, statements,
-  # traceability, semantic_review, strong_review, corroboration, source_check,
+  # traceability, semantic_review, strong_review, corroboration, source_check, verification,
   # concepts, impact_audit, apply_changes и corpus_validation.
   # Исполнитель первичного контура должен изменить машиночитаемую очередь.
   # Успешный исполнитель глобальной стадии закрывает её в состоянии прохода.
