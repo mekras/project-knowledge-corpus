@@ -1207,7 +1207,73 @@ action_policy:
                 - unit_id: chapter-1
             """,
         )
-        assert_fails_with(root, "status must be non-empty text")
+        assert_fails_with(root, "status must be one of:")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_minimal_corpus(root)
+        write_long_source(root, stage="statements_extracted")
+        write_source_map(
+            root,
+            coverage="""
+            coverage:
+              units:
+                - unit_id: chapter-1
+                  status: deferred
+                  reason: "Left for later."
+            """,
+        )
+        assert_fails_with(root, "status must be one of:")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_minimal_corpus(root)
+        write_long_source(root, stage="statements_extracted")
+        write_source_map(
+            root,
+            coverage="""
+            coverage:
+              units:
+                - unit_id: chapter-1
+                  status: postponed
+                  reason: "Not reviewed yet."
+            """,
+        )
+        assert_fails_with(root, "blocker_code must be one of:")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_minimal_corpus(root)
+        write_long_source(root, stage="statements_extracted")
+        write_source_map(
+            root,
+            coverage="""
+            coverage:
+              units:
+                - unit_id: chapter-1
+                  status: postponed
+                  reason: "Not reviewed yet."
+                  blocker_code: not_a_real_code
+            """,
+        )
+        assert_fails_with(root, "blocker_code must be one of:")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_minimal_corpus(root)
+        write_long_source(root, stage="statements_extracted")
+        write_source_map(
+            root,
+            coverage="""
+            coverage:
+              units:
+                - unit_id: chapter-1
+                  status: postponed
+                  reason: "Owner must decide."
+                  blocker_code: owner_decision_required
+            """,
+        )
+        assert_passes(root)
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)

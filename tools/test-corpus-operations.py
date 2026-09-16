@@ -25,6 +25,7 @@ QUEUE_NAMES = (
     "transcribe",
     "normalize",
     "statements",
+    "coverage_gap",
     "traceability",
     "semantic_review",
     "strong_review",
@@ -42,6 +43,60 @@ QUEUE_NAMES = (
 def write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(dedent(text).lstrip(), encoding="utf-8")
+
+
+def indented_yaml_fragment(text: str) -> str:
+    return "\n".join(f"        {line}" if line else "" for line in dedent(text).strip("\n").splitlines())
+
+
+def write_long_source(root: Path, *, coverage_units: str, long_source: bool = True) -> None:
+    """Add a long-source fixture (TEST-LONG) with a source-map.yml coverage map."""
+    catalog_path = root / "knowledge" / "catalog.yml"
+    catalog_path.write_text(
+        catalog_path.read_text(encoding="utf-8")
+        + '  - id: TEST-LONG\n    title: "Длинный источник"\n    path: data/test-long\n',
+        encoding="utf-8",
+    )
+    write(root / "knowledge" / "data" / "test-long" / "items.yml", "items: []\n")
+    write(
+        root / "knowledge" / "data" / "test-long" / "source.yml",
+        f"""
+        id: TEST-LONG
+        slug: test-long
+        title: "Длинный источник"
+        access:
+          default: "Открытый тестовый источник."
+        status: active
+        carrier_type: document
+        source_kind: book
+        long_source: {"true" if long_source else "false"}
+        adapter: manual
+        reliability: test
+        refresh_policy: manual
+        """,
+    )
+    coverage_block = indented_yaml_fragment(coverage_units)
+    write(
+        root / "knowledge" / "data" / "test-long" / "source-map.yml",
+        f"""
+        source_map_version: 1
+        source_id: TEST-LONG
+        long_source: true
+        extraction_passport:
+          format: pdf
+          file_size_bytes: 123
+          content_hash_absence_reason: "Test fixture."
+          metadata_source: manual
+          extraction_tool: manual
+          extraction_status: normalized_fragments_ready
+        structure:
+          units:
+            - id: chapter-1
+              title: "Chapter 1"
+              order: 1
+{coverage_block}
+        """,
+    )
 
 
 def build_corpus(root: Path) -> None:
@@ -676,6 +731,19 @@ def run(root: Path, *arguments: str, expected: int = 0) -> subprocess.CompletedP
             f"Ожидался код {expected}, получен {result.returncode}.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
+
+
+def extract_queue_block(stdout: str, name: str) -> str:
+    """Return the report slice for one queue, from its header to the next queue's header."""
+    order = list(QUEUE_NAMES)
+    index = order.index(name)
+    start_marker = f"- {name}: "
+    start = stdout.index(start_marker)
+    if index + 1 < len(order):
+        end = stdout.index(f"- {order[index + 1]}: ", start)
+    else:
+        end = len(stdout)
+    return stdout[start:end]
 
 
 def remove_stage_commands(root: Path, stage: str) -> None:
@@ -1569,6 +1637,162 @@ def main() -> int:
         invalid_completion = run(root, "--reconcile-state", expected=2)
         if "global_stage_completions" not in invalid_completion.stderr:
             raise AssertionError("Некорректная запись global_stage_completions не была отклонена.")
+
+    # coverage_gap: a structure unit without a coverage.units record.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        write_long_source(root, coverage_units="coverage:\n  units: []\n")
+        plan = run(root)
+        block = extract_queue_block(plan.stdout, "coverage_gap")
+        if "TEST-LONG:chapter-1" not in block:
+            raise AssertionError("Единица без записи в coverage.units не попала в coverage_gap.")
+
+    # coverage_gap: postponed without a blocker_code.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        write_long_source(
+            root,
+            coverage_units="""
+            coverage:
+              units:
+                - unit_id: chapter-1
+                  status: postponed
+                  reason: "Не проверено человеком."
+            """,
+        )
+        plan = run(root)
+        coverage_block = extract_queue_block(plan.stdout, "coverage_gap")
+        human_block = extract_queue_block(plan.stdout, "human_decision")
+        if "TEST-LONG:chapter-1" not in coverage_block:
+            raise AssertionError("postponed без blocker_code не попал в coverage_gap.")
+        if "TEST-LONG:chapter-1" in human_block:
+            raise AssertionError("postponed без blocker_code не должен уходить в human_decision.")
+
+    # coverage_gap -> human_decision: postponed with a valid blocker_code and action_required.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        write_long_source(
+            root,
+            coverage_units="""
+            coverage:
+              units:
+                - unit_id: chapter-1
+                  status: postponed
+                  reason: "Требуется решение владельца."
+                  blocker_code: owner_decision_required
+                  action_required: "Выбрать способ извлечения главы."
+            """,
+        )
+        plan = run(root)
+        coverage_block = extract_queue_block(plan.stdout, "coverage_gap")
+        human_block = extract_queue_block(plan.stdout, "human_decision")
+        if "TEST-LONG:chapter-1" in coverage_block:
+            raise AssertionError("postponed с валидным blocker_code не должен оставаться в coverage_gap.")
+        if "TEST-LONG:chapter-1" not in human_block or "blocker_code=owner_decision_required" not in human_block:
+            raise AssertionError("postponed с валидным blocker_code не эскалирован в human_decision.")
+
+    # coverage_gap: access/source blocker codes require two recorded automatic attempts.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        write_long_source(
+            root,
+            coverage_units="""
+            coverage:
+              units:
+                - unit_id: chapter-1
+                  status: postponed
+                  reason: "Источник недоступен."
+                  blocker_code: source_unavailable
+                  automatic_attempts:
+                    - "Одна попытка получения."
+            """,
+        )
+        invalid = run(root, expected=2)
+        if "двух разных автоматических попыток доступа" not in invalid.stderr:
+            raise AssertionError("Одиночная попытка доступа была принята как эскалация решения владельца.")
+
+    # coverage_gap: a source without long_source: true is not inspected at all.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        write_long_source(root, coverage_units="coverage:\n  units: []\n", long_source=False)
+        plan = run(root)
+        coverage_block = extract_queue_block(plan.stdout, "coverage_gap")
+        if "TEST-LONG" in coverage_block:
+            raise AssertionError("Источник без long_source: true не должен создавать coverage_gap.")
+
+    # completed: a fully covered long source does not block completion alongside other empty queues.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        reject_automated_work(root, keep_blocked=False)
+        write_long_source(
+            root,
+            coverage_units="""
+            coverage:
+              units:
+                - unit_id: chapter-1
+                  status: extracted
+            """,
+        )
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        run(root, "--run-pipeline", "--max-steps", "2", expected=10)
+        run(root, "--run-pipeline")
+        state_path = root / ".local" / "state" / "corpus-pipeline.json"
+        finished = json.loads(state_path.read_text(encoding="utf-8"))
+        if finished["status"] != "completed":
+            raise AssertionError("Полностью закрытая карта охвата не позволила проходу завершиться.")
+
+    # not completed: an invalid or missing coverage.units record fails the shared preflight
+    # contract before the run can ever reach `completed` (validator and planner agree).
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        reject_automated_work(root, keep_blocked=False)
+        write_long_source(root, coverage_units="coverage:\n  units: []\n")
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        blocked = run(root, "--run-pipeline", expected=1)
+        state_path = root / ".local" / "state" / "corpus-pipeline.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        if state["status"] == "completed" or state["reason_code"] != "preflight_failed":
+            raise AssertionError("Незакрытая структурная единица не должна допускать completed.")
+        if "coverage.units" not in blocked.stdout:
+            raise AssertionError("Причина отказа не указывает на незакрытую карту охвата.")
+
+    # not completed: a valid postponed unit with a blocker_code escalates to human_decision,
+    # so the run reaches `waiting_external` instead of `completed`.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        reject_automated_work(root, keep_blocked=False)
+        write_long_source(
+            root,
+            coverage_units="""
+            coverage:
+              units:
+                - unit_id: chapter-1
+                  status: postponed
+                  reason: "Требуется решение владельца."
+                  blocker_code: owner_decision_required
+            """,
+        )
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        run(root, "--run-pipeline", "--max-steps", "2", expected=10)
+        waiting = run(root, "--run-pipeline", expected=20)
+        state = json.loads(
+            (root / ".local" / "state" / "corpus-pipeline.json").read_text(encoding="utf-8")
+        )
+        if state["status"] != "waiting_external":
+            raise AssertionError("Отложенная единица с кодом блокера не перевела проход в ожидание решения.")
+        if "TEST-LONG:chapter-1" not in waiting.stdout:
+            raise AssertionError("Отчёт об ожидании не показывает отложенную структурную единицу.")
 
     return 0
 
