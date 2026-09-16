@@ -7,6 +7,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -18,6 +19,24 @@ from textwrap import dedent
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / ".apm" / "skills" / "kc-pipeline" / "scripts" / "run-corpus-operations.py"
 VALIDATOR = REPO_ROOT / ".apm" / "skills" / "kc-inventory" / "scripts" / "validate-corpus-layout.py"
+QUEUE_NAMES = (
+    "content_selection",
+    "fetch",
+    "transcribe",
+    "normalize",
+    "statements",
+    "traceability",
+    "semantic_review",
+    "strong_review",
+    "corroboration",
+    "source_check",
+    "verification",
+    "concepts",
+    "impact_audit",
+    "apply_changes",
+    "corpus_validation",
+    "human_decision",
+)
 
 
 def write(path: Path, text: str) -> None:
@@ -657,6 +676,48 @@ def run(root: Path, *arguments: str, expected: int = 0) -> subprocess.CompletedP
             f"Ожидался код {expected}, получен {result.returncode}.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
+
+
+def remove_stage_commands(root: Path, stage: str) -> None:
+    """Strip a stage's registered commands from operations.yml so it has no executor."""
+    path = root / "operations.yml"
+    text = path.read_text(encoding="utf-8")
+    pattern = re.compile(rf"(?m)^  {re.escape(stage)}:\n(?:    .*\n)*")
+    new_text, count = pattern.subn("", text, count=1)
+    if count != 1:
+        raise AssertionError(f"Не найден блок команд стадии {stage} в operations.yml.")
+    path.write_text(new_text, encoding="utf-8")
+
+
+def write_run_state(root: Path, **overrides: object) -> Path:
+    """Write a self-consistent corpus-pipeline.json for --complete-global-stage tests."""
+    state = {
+        "contract_version": 1,
+        "run_id": "test-run",
+        "status": "paused_limit",
+        "reason_code": "step_limit_reached",
+        "started_at": "2026-09-01T00:00:00+00:00",
+        "updated_at": "2026-09-01T00:00:00+00:00",
+        "completed_at": None,
+        "attempts": 1,
+        "steps": 1,
+        "available_task_count": 0,
+        "blocked_task_count": 0,
+        "blocker_codes": [],
+        "human_decision_groups": [],
+        "human_decision_group_count": 0,
+        "human_decision_group_overflow": 0,
+        "completed_global_stages": [],
+        "resource_waiting": [],
+        "active_executor": None,
+        "queues": {name: [] for name in QUEUE_NAMES},
+        "message": "Тестовое состояние.",
+    }
+    state.update(overrides)
+    path = root / ".local" / "state" / "corpus-pipeline.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
 
 
 def main() -> int:
@@ -1307,6 +1368,207 @@ def main() -> int:
         )
         if "Неподдерживаемая версия договора адаптера" not in unsupported_version.stderr:
             raise AssertionError("unknown adapter contract version was not rejected")
+
+    # --complete-global-stage: successful manual close of a stage without a configured
+    # executor advances the queue, and a resumed --run-pipeline finishes the remaining
+    # (still project-executed) global stages without rerunning the manually closed one.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        reject_automated_work(root, keep_blocked=False)
+        remove_stage_commands(root, "concepts")
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        write(root / "concepts-evidence.md", "Концепции обновлены вручную.\n")
+
+        stalled = run(root, "--run-pipeline", expected=11)
+        state_path = root / ".local" / "state" / "corpus-pipeline.json"
+        before = json.loads(state_path.read_text(encoding="utf-8"))
+        if before["status"] != "paused_resources" or "concepts" not in [
+            entry["queue"] for entry in before["resource_waiting"]
+        ]:
+            raise AssertionError("Стадия без исполнителя не осталась в ожидании ресурсов.")
+
+        closed = run(
+            root,
+            "--complete-global-stage",
+            "concepts",
+            "--evidence",
+            "concepts-evidence.md",
+            "--note",
+            "Закрыто вручную для проверки.",
+        )
+        if "закрыта вручную" not in closed.stdout:
+            raise AssertionError("Успешное закрытие стадии не подтверждено в выводе.")
+        after = json.loads(state_path.read_text(encoding="utf-8"))
+        if "concepts" not in after["completed_global_stages"]:
+            raise AssertionError("Ручное закрытие не добавило стадию в completed_global_stages.")
+        completion = after.get("global_stage_completions", {}).get("concepts")
+        if (
+            not completion
+            or completion["completed_by"] != "manual"
+            or completion["evidence"] != ["concepts-evidence.md"]
+            or completion["note"] != "Закрыто вручную для проверки."
+        ):
+            raise AssertionError("Запись global_stage_completions не сохранила ожидаемые поля.")
+        if (
+            after["run_id"] != before["run_id"]
+            or after["status"] != before["status"]
+            or after["reason_code"] != before["reason_code"]
+            or after["attempts"] != before["attempts"]
+            or after["steps"] != before["steps"]
+        ):
+            raise AssertionError("Ручное закрытие изменило поля, которые должны оставаться неизменными.")
+
+        finished = run(root, "--run-pipeline")
+        final_state = json.loads(state_path.read_text(encoding="utf-8"))
+        if final_state["status"] != "completed":
+            raise AssertionError("Проход не завершился после ручного закрытия единственной незакрытой стадии.")
+        if "check-concepts" in finished.stdout:
+            raise AssertionError("Ручное закрытие не должно запускать команду закрытой стадии.")
+        if final_state["completed_global_stages"] != [
+            "concepts",
+            "impact_audit",
+            "apply_changes",
+            "corpus_validation",
+        ]:
+            raise AssertionError("Продолжение не закрыло оставшиеся глобальные стадии проектными командами.")
+        if "concepts" not in final_state.get("global_stage_completions", {}):
+            raise AssertionError("Итоговое состояние потеряло след ручного закрытия стадии.")
+
+    # --complete-global-stage: a stage with a registered command must never be closed manually.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        write(root / "evidence.md", "x\n")
+        rejected = run(
+            root,
+            "--complete-global-stage",
+            "concepts",
+            "--evidence",
+            "evidence.md",
+            expected=2,
+        )
+        if "зарегистрирован исполнитель" not in rejected.stderr:
+            raise AssertionError("Стадия с настроенной командой была закрыта вручную.")
+
+    # --complete-global-stage: refuse to close a stage while the primary queue circuit is not empty.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        remove_stage_commands(root, "concepts")
+        write_run_state(root)
+        write(root / "evidence.md", "x\n")
+        nonempty = run(
+            root,
+            "--complete-global-stage",
+            "concepts",
+            "--evidence",
+            "evidence.md",
+            expected=2,
+        )
+        if "Первичный контур" not in nonempty.stderr:
+            raise AssertionError("Непустой первичный контур не остановил ручное закрытие.")
+
+    # --complete-global-stage: refuse to close a global stage out of order.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        reject_automated_work(root, keep_blocked=False)
+        remove_stage_commands(root, "impact_audit")
+        write_run_state(root)
+        write(root / "evidence.md", "x\n")
+        out_of_order = run(
+            root,
+            "--complete-global-stage",
+            "impact_audit",
+            "--evidence",
+            "evidence.md",
+            expected=2,
+        )
+        if "Нарушен порядок" not in out_of_order.stderr or "concepts" not in out_of_order.stderr:
+            raise AssertionError("Закрытие стадии не по порядку не было отклонено.")
+
+    # --complete-global-stage: refuse to close a stage when --evidence does not exist on disk.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        reject_automated_work(root, keep_blocked=False)
+        remove_stage_commands(root, "concepts")
+        write_run_state(root)
+        missing_evidence = run(
+            root,
+            "--complete-global-stage",
+            "concepts",
+            "--evidence",
+            "no-such-artifact.md",
+            expected=2,
+        )
+        if "не существует" not in missing_evidence.stderr:
+            raise AssertionError("Отсутствующий на диске --evidence не был отклонён.")
+
+    # --complete-global-stage: a repeated call for an already closed stage is a safe no-op.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        reject_automated_work(root, keep_blocked=False)
+        remove_stage_commands(root, "concepts")
+        write_run_state(root)
+        write(root / "concepts-evidence.md", "Готово.\n")
+        run(root, "--complete-global-stage", "concepts", "--evidence", "concepts-evidence.md")
+        state_path = root / ".local" / "state" / "corpus-pipeline.json"
+        before_repeat = state_path.read_text(encoding="utf-8")
+        repeated = run(root, "--complete-global-stage", "concepts", "--evidence", "concepts-evidence.md")
+        after_repeat = state_path.read_text(encoding="utf-8")
+        if "уже закрыта" not in repeated.stdout:
+            raise AssertionError("Повторное закрытие уже закрытой стадии не сообщило об идемпотентности.")
+        if before_repeat != after_repeat:
+            raise AssertionError("Повторное закрытие уже закрытой стадии изменило состояние прохода.")
+
+    # --complete-global-stage: refuse to touch a run that already finished (status=completed).
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        remove_stage_commands(root, "concepts")
+        write_run_state(
+            root,
+            status="completed",
+            reason_code="all_queues_empty",
+            completed_at="2026-09-01T00:00:00+00:00",
+        )
+        write(root / "evidence.md", "x\n")
+        completed_rejected = run(
+            root,
+            "--complete-global-stage",
+            "concepts",
+            "--evidence",
+            "evidence.md",
+            expected=2,
+        )
+        if "completed" not in completed_rejected.stderr:
+            raise AssertionError("Закрытие стадии для завершённого прохода не было отклонено.")
+
+    # read_run_state: reject global_stage_completions naming a stage outside completed_global_stages.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        write_run_state(
+            root,
+            completed_global_stages=[],
+            global_stage_completions={
+                "concepts": {
+                    "completed_by": "manual",
+                    "completed_at": "2026-09-01T00:00:00+00:00",
+                    "evidence": ["concepts-evidence.md"],
+                    "note": None,
+                }
+            },
+        )
+        invalid_completion = run(root, "--reconcile-state", expected=2)
+        if "global_stage_completions" not in invalid_completion.stderr:
+            raise AssertionError("Некорректная запись global_stage_completions не была отклонена.")
 
     return 0
 
