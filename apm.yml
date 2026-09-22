@@ -1,5 +1,5 @@
 name: project-knowledge-corpus
-version: 0.20.6
+version: 0.21.0
 description: Коллекция навыков для создания, сопровождения и применения корпуса знаний
   проекта
 author: mekras
@@ -23,7 +23,8 @@ scripts:
     tools/validate-apm-lock-artifacts.py; python3
     tools/validate-portable-corpus-references.py; python3
     tools/test-corpus-layout-validator.py; python3
-    tools/test-corpus-operations.py; python3 tools/test-corpus-statements.py;
+    tools/test-corpus-operations.py; python3 tools/test-corpus-audit-regressions.py;
+    python3 tools/test-corpus-statements.py;
     python3 tools/test-transcription-contract.py; python3
     tools/test-knowledge-evaluation.py; python3
     tools/test-run-execution-class.py; python3 tools/test-apm-audit-ci.py'

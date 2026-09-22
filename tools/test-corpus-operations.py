@@ -70,7 +70,8 @@ def write_long_source(root: Path, *, coverage_units: str, long_source: bool = Tr
         carrier_type: document
         source_kind: book
         long_source: {"true" if long_source else "false"}
-        adapter: manual
+        adapter: builtin.local-file
+        locator: "file:///tmp/test-long-source.txt"
         reliability: test
         refresh_policy: manual
         """,
@@ -351,6 +352,52 @@ def build_corpus(root: Path) -> None:
         """,
     )
     write(
+        root / "index-adapter.py",
+        """
+        import json
+        import sys
+        from pathlib import Path
+
+        operation, source_id = sys.argv[1:]
+        if operation == "probe":
+            status = "ready"
+            artifacts = []
+        elif operation == "index":
+            items_path = Path("knowledge/data/test-index-only/items.yml")
+            items_text = items_path.read_text(encoding="utf-8")
+            if Path(".local/add-index-unit").exists() and "TEST-INDEX-ONLY-NEW" not in items_text:
+                items_text += '''
+          - id: TEST-INDEX-ONLY-NEW
+            title: "Новая релевантная единица"
+            access: "Открытый тестовый источник."
+            status: active
+            workflow_stage: indexed
+            processing_scope: full
+                '''
+            if Path(".local/technical-index-change").exists() and "content_hash: changed" not in items_text:
+                items_text = items_text.replace(
+                    "TEST-INDEX-ONLY-METADATA\\n",
+                    "TEST-INDEX-ONLY-METADATA\\n    content_hash: changed\\n",
+                    1,
+                )
+            items_path.write_text(items_text, encoding="utf-8")
+            Path("knowledge/data/test-index-only/index-marker.yml").write_text("refreshed: true\\n", encoding="utf-8")
+            status = "unchanged"
+            artifacts = ["knowledge/data/test-index-only/index-marker.yml"]
+        else:
+            raise SystemExit(3)
+        print(json.dumps({
+            "contract_version": 2,
+            "operation": operation,
+            "source_id": source_id,
+            "adapter": "builtin.index",
+            "status": status,
+            "message": "Индекс тестового источника обновлён.",
+            "artifacts": artifacts,
+        }))
+        """,
+    )
+    write(
         root / "advance-content-selection.py",
         """
         import json
@@ -461,6 +508,26 @@ def build_corpus(root: Path) -> None:
             working_directory: .
             write_paths:
               - knowledge/data/test
+          builtin.index:
+            contract_version: 2
+            operations:
+              probe:
+                argv:
+                  - {sys.executable}
+                  - index-adapter.py
+                  - probe
+                  - "{{source_id}}"
+                working_directory: .
+                write_paths: []
+              index:
+                argv:
+                  - {sys.executable}
+                  - index-adapter.py
+                  - index
+                  - "{{source_id}}"
+                working_directory: .
+                write_paths:
+                  - knowledge/data/test-index-only
         """,
     )
     write(root / "outside.txt", "original\n")
@@ -948,9 +1015,9 @@ def main() -> int:
         if '"status": "paused_limit"' not in state or '"available_task_count": 0' in state:
             raise AssertionError("Лимит попытки не сохранил незавершённый проход и полный хвост.")
         run_id_line = next(line for line in state.splitlines() if '"run_id"' in line)
-        unavailable = run(root, "--run-pipeline", expected=11)
+        unavailable = run(root, "--run-pipeline", expected=12)
         resumed_state = state_path.read_text(encoding="utf-8")
-        if '"status": "paused_resources"' not in resumed_state or run_id_line not in resumed_state:
+        if '"status": "awaiting_agent_task"' not in resumed_state or '"agent_task_packet"' not in resumed_state or run_id_line not in resumed_state:
             raise AssertionError("Следующая попытка не продолжила тот же проход.")
         if "status: completed" in paused.stdout or "status: completed" in unavailable.stdout:
             raise AssertionError("Управляемая пауза не должна называться завершением прохода.")
@@ -1449,10 +1516,10 @@ def main() -> int:
         subprocess.run(["git", "add", "-A"], cwd=root, check=True)
         write(root / "concepts-evidence.md", "Концепции обновлены вручную.\n")
 
-        stalled = run(root, "--run-pipeline", expected=11)
+        stalled = run(root, "--run-pipeline", expected=12)
         state_path = root / ".local" / "state" / "corpus-pipeline.json"
         before = json.loads(state_path.read_text(encoding="utf-8"))
-        if before["status"] != "paused_resources" or "concepts" not in [
+        if before["status"] != "awaiting_agent_task" or "concepts" not in [
             entry["queue"] for entry in before["resource_waiting"]
         ]:
             raise AssertionError("Стадия без исполнителя не осталась в ожидании ресурсов.")
@@ -1793,6 +1860,184 @@ def main() -> int:
             raise AssertionError("Отложенная единица с кодом блокера не перевела проход в ожидание решения.")
         if "TEST-LONG:chapter-1" not in waiting.stdout:
             raise AssertionError("Отчёт об ожидании не показывает отложенную структурную единицу.")
+
+    # A full pass refreshes source indexes before building queues and preserves
+    # technical-only changes separately from a new selected unit.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        write(root / ".local" / "add-index-unit", "yes\n")
+        write(root / ".local" / "technical-index-change", "yes\n")
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        result = run(root, "--run-pipeline", "--max-steps", "1", expected=10)
+        state = json.loads((root / ".local" / "state" / "corpus-pipeline.json").read_text(encoding="utf-8"))
+        delta = state["index_sync"]["delta"]["sources"]
+        index_delta = next(entry for entry in delta if entry["source_id"] == "TEST-INDEX-ONLY")
+        if index_delta["counts"]["added"] != 1 or index_delta["counts"]["changed"] != 1:
+            raise AssertionError("Полный проход не сохранил новую и изменённую единицу индекса.")
+        if index_delta["counts"]["technical_only"] != 1:
+            raise AssertionError("Изменение только хэша не было отмечено как техническое.")
+        summary_counts = state["owner_summary"]["units"]
+        delta_counts = state["index_sync"]["delta"]["counts"]
+        if any(summary_counts[name] != delta_counts[name] for name in ("added", "changed", "removed", "unchanged")):
+            raise AssertionError("Счётчики сводки не совпали с дельтой индексов.")
+        if summary_counts.get("rejected", 0) != delta_counts.get("rejected", 0):
+            raise AssertionError("Дополнительное измерение rejected сводки не совпало с дельтой.")
+        if state["owner_summary"]["technical_only_units"] != delta_counts["technical_only"]:
+            raise AssertionError("Счётчик технических изменений сводки не совпал с дельтой.")
+        entries = state["owner_summary"]["unit_entries"]
+        for category in ("added", "changed", "removed", "unchanged", "technical_only", "rejected"):
+            if sum(entry["category"] == category for entry in entries) != delta_counts[category]:
+                raise AssertionError("Перечень единиц owner summary не совпал с его счётчиком.")
+        if "TEST-INDEX-ONLY-NEW" not in result.stdout or "Дельта индексов источников" not in result.stdout:
+            raise AssertionError("Новая индексная единица не попала в отчёт и очередь полного прохода.")
+
+    def configure_transfer_fixture(root: Path, finding: str) -> None:
+        write(root / "product.txt", "before")
+        operations = root / "operations.yml"
+        text = operations.read_text(encoding="utf-8")
+        text = text.replace(
+            f'''      - id: apply-safe-changes
+        argv: [{sys.executable}, -c, "pass"]
+        working_directory: .
+        write_paths: [knowledge]
+''',
+            f'''      - id: apply-safe-changes
+        argv: [{sys.executable}, -c, "from pathlib import Path; Path('product.txt').write_text('applied', encoding='utf-8')"]
+        working_directory: .
+        write_paths: [.]
+''',
+        )
+        text += "\ntransfer_policy:\n  mode: propose_only\nimpact_report:\n  path: .local/reports/impact-findings.yml\nsurface_paths:\n  user_documentation: [product.txt]\n  requirements: [product.txt]\n  configuration: [config/**]\n"
+        operations.write_text(text, encoding="utf-8")
+        write(root / ".local" / "reports" / "impact-findings.yml", finding)
+        gitignore = root / ".gitignore"
+        gitignore.write_text(gitignore.read_text(encoding="utf-8") + ".local/\n", encoding="utf-8")
+
+    # propose_only completes the corpus pass, records a checked proposal, and
+    # never executes the product-changing apply command.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        reject_automated_work(root, keep_blocked=False)
+        configure_transfer_fixture(
+            root,
+            """
+            findings:
+              - id: proposal-1
+                status: apply_now
+                basis: "Новая подтверждённая возможность."
+                source: TEST
+                affected_surfaces: [requirements, user_documentation]
+                expected_result: "Проект описывает возможность в подтверждённой области."
+                recommended_change: "Обновить требование и пользовательский раздел."
+                source_delta:
+                  source_id: TEST
+                  categories: [unchanged]
+                  unit_ids: [TEST-V2-COMPLETE]
+                target_paths: [product.txt]
+                target_surfaces: {product.txt: user_documentation}
+                expected_hashes: {}
+            """,
+        )
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        run(root, "--run-pipeline")
+        state = json.loads((root / ".local" / "state" / "corpus-pipeline.json").read_text(encoding="utf-8"))
+        if state["status"] != "completed" or len(state["owner_summary"]["proposed_changes"]) != 1:
+            raise AssertionError("propose_only не завершил проход или потерял предложение.")
+        if (root / "product.txt").read_text(encoding="utf-8") != "before":
+            raise AssertionError("propose_only изменил файл продукта.")
+
+    # apply_now keeps the existing transfer behaviour and writes the product.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        reject_automated_work(root, keep_blocked=False)
+        configure_transfer_fixture(
+            root,
+            """
+            findings:
+              - id: apply-1
+                status: apply_now
+                basis: "Проверенное основание."
+                source: TEST
+                affected_surfaces: [user_documentation]
+                expected_result: "Раздел соответствует источнику."
+                recommended_change: "Обновить раздел."
+                source_delta:
+                  source_id: TEST
+                  categories: [unchanged]
+                  unit_ids: [TEST-V2-COMPLETE]
+                target_paths: [product.txt]
+                expected_hashes: {}
+                change_set:
+                  - op: update
+                    path: product.txt
+                    before_sha256: 6db7d803e74f1ffa7d8f5adc0bf95b3e15bf4c8373fffadf546227cc6c6742cb
+                    after_sha256: b4267ce93cbba4e415504feb895f662dcced5d7aa406f27e8447c8fd5f0d48c8
+                    content_base64: YXBwbGllZA==
+            """,
+        )
+        operations = root / "operations.yml"
+        operations.write_text(
+            operations.read_text(encoding="utf-8").replace("mode: propose_only", "mode: apply_now"),
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        run(root, "--run-pipeline")
+        if (root / "product.txt").read_text(encoding="utf-8") != "applied":
+            raise AssertionError("apply_now не применил безопасное изменение.")
+
+    # An owner decision remains separate from a ready proposal and does not
+    # become an artificial human_decision queue item.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        reject_automated_work(root, keep_blocked=False)
+        configure_transfer_fixture(
+            root,
+            """
+            findings:
+              - id: decision-1
+                status: owner_decision
+                basis: "Источник подтверждает ограничение, но выбор продукта открыт."
+                source: TEST
+                affected_surfaces: [configuration]
+                decision_required: "Выбрать, включать ли возможность в поставку."
+                source_delta:
+                  source_id: TEST
+                  categories: [unchanged]
+                  unit_ids: [TEST-V2-COMPLETE]
+            """,
+        )
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        run(root, "--run-pipeline")
+        state = json.loads((root / ".local" / "state" / "corpus-pipeline.json").read_text(encoding="utf-8"))
+        if state["status"] != "completed" or len(state["owner_summary"]["owner_decisions"]) != 1:
+            raise AssertionError("owner_decision смешан с готовым предложением или хвостом.")
+
+    # Legacy manual is readable but diagnostically incomplete and cannot finish
+    # a full index refresh; a valid agent route can finish after confirmation.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        source_path = root / "knowledge" / "data" / "test" / "source.yml"
+        source_path.write_text(
+            source_path.read_text(encoding="utf-8").replace("adapter: builtin.local-file", "adapter: manual"),
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        legacy = subprocess.run([sys.executable, str(VALIDATOR), "knowledge", "--output", "json"], cwd=root, capture_output=True, text=True, check=False)
+        if legacy.returncode != 0 or "legacy adapter: manual" not in legacy.stdout:
+            raise AssertionError("Старый adapter: manual не получил диагностируемое предупреждение.")
+        failed = run(root, "--run-pipeline", expected=1)
+        if "index_refresh_incomplete" not in failed.stdout:
+            raise AssertionError("manual без маршрута не удержал полный проход незавершённым.")
 
     return 0
 

@@ -110,6 +110,10 @@ def validate_skill(skill: Path) -> list[str]:
         return errors
 
     compatibility = frontmatter_value(text, "compatibility")
+    optional_dependencies = {
+        {"pyyaml": "yaml"}.get(name.lower(), name.lower())
+        for name in filter(None, (frontmatter_value(text, "optional_dependencies") or "").replace(",", " ").split())
+    }
     if not compatibility:
         errors.append(f"{skill_file}: нет поля compatibility для навыка со скриптами")
         compatibility = ""
@@ -135,10 +139,12 @@ def validate_skill(skill: Path) -> list[str]:
             except SyntaxError as error:
                 errors.append(f"{script}:{error.lineno}: не удалось разобрать Python")
                 continue
-            external = sorted(imports - set(sys.stdlib_module_names) - {"__future__"})
-            if external:
+            local_modules = {candidate.stem for candidate in script.parent.glob("*.py")}
+            external = sorted(imports - set(sys.stdlib_module_names) - {"__future__"} - local_modules)
+            undeclared = sorted(name for name in external if name.lower() not in optional_dependencies)
+            if undeclared:
                 errors.append(
-                    f"{script}: сторонние импорты запрещены: {', '.join(external)}"
+                    f"{script}: сторонние импорты не объявлены как optional_dependencies: {', '.join(undeclared)}"
                 )
 
     if uses_python and "Python" not in compatibility:

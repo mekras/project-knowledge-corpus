@@ -397,6 +397,7 @@ def load_cases(
         operations = []
     operation_prefixes: dict[str, tuple[Path, list[str]]] = {}
     operation_inputs: dict[str, list[Path]] = {}
+    operation_absent_inputs: dict[str, list[Path]] = {}
     for index, operation in enumerate(operations):
         label = f"{contract}: operations[{index}]"
         if not isinstance(operation, dict):
@@ -441,6 +442,19 @@ def load_cases(
                     declared_inputs.append(input_path)
         operation_prefixes[identifier] = (script, prefix)
         operation_inputs[identifier] = declared_inputs
+        absent_value = operation.get("absent_inputs", [])
+        absent_inputs = string_list(absent_value) if isinstance(absent_value, list) else None
+        if absent_inputs is None:
+            errors.append(f"{label}.absent_inputs: нужен массив непустых строк")
+            absent_inputs = []
+        absent_paths: list[Path] = []
+        for input_value in absent_inputs:
+            input_path = safe_relative(input_value)
+            if input_path is None:
+                errors.append(f"{label}.absent_inputs: нужен безопасный относительный путь")
+            else:
+                absent_paths.append(input_path)
+        operation_absent_inputs[identifier] = absent_paths
     missing_operations = sorted(
         expected_scripts - {script for script, _ in operation_prefixes.values()},
     )
@@ -556,7 +570,10 @@ def load_cases(
         if is_runnable_case(skill, case):
             runnable_case = dict(case)
             runnable_case["_operation_inputs"] = {
-                operation_id: [path.as_posix() for path in operation_inputs[operation_id]]
+                operation_id: [
+                    *(path.as_posix() for path in operation_inputs[operation_id]),
+                    *(path.as_posix() for path in operation_absent_inputs.get(operation_id, [])),
+                ]
                 for operation_id in covers
                 if operation_id in operation_inputs
             }
