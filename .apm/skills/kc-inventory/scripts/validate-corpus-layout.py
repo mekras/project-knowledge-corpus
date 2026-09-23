@@ -1409,10 +1409,10 @@ class Validator:
             self.errors.append(f"{rel}: files must be a mapping")
             return
 
-        for artifact in files.get("tracked", []):
+        for artifact in files.get("tracked") or []:
             if not (path.parent / artifact).exists():
                 self.errors.append(f"{rel}: tracked file does not exist: {artifact}")
-        for artifact in files.get("local", []):
+        for artifact in files.get("local") or []:
             if ".local." not in artifact and ".tmp." not in artifact:
                 self.errors.append(
                     f"{rel}: local file must use *.local.* or *.tmp.* name: {artifact}"
