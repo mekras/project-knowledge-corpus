@@ -221,6 +221,24 @@ def run(root: Path, fake_apm: Path) -> subprocess.CompletedProcess[str]:
 
 
 def main() -> int:
+    matches = load_audit_module().matches_local_source
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        source = root / ".apm/skills/example/references/contract.md"
+        deployed = root / ".agents/skills/example/references/contract.md"
+        source.parent.mkdir(parents=True)
+        deployed.parent.mkdir(parents=True)
+        source.write_text("[contract](../../other/references/admission.md#decision)\n")
+        rewritten = "[contract](../../../../.apm/skills/other/references/admission.md#decision)\n"
+        deployed.write_text(rewritten)
+        assert matches(source, deployed)
+        deployed.write_text(rewritten + "changed\n")
+        assert not matches(source, deployed)
+        deployed.write_text(rewritten.replace("other/", "another/"))
+        assert not matches(source, deployed)
+        deployed.write_text(rewritten.replace("../../../../", "../../../"))
+        assert not matches(source, deployed)
+
     audit_module = load_audit_module()
     assert audit_module.local_package_id(
         {"name": "local-package", "version": "2.0.0"},

@@ -25,6 +25,7 @@
 
 1. [Как добавить в корпус файл без добавления в Git](50-how-to/01-add-local-file-outside-git.md)
 2. [Как работать с источником с ограниченным доступом](50-how-to/02-use-access-limited-source.md)
+3. [Как настроить допуск материалов в корпус](50-how-to/03-configure-source-admission.md)
 
 ## Справочник
 

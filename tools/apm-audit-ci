@@ -103,9 +103,19 @@ def matches_local_source(source: Path, deployed: Path) -> bool:
         deployed_text = deployed_bytes.decode("utf-8")
     except UnicodeDecodeError:
         return False
+    # Глубина справочного файла отличается от глубины SKILL.md. Принимаем
+    # только перенос ссылки к той же папке навыков, сохраняя её остаток.
+    skills_root = next(
+        (parent for parent in source.parents
+         if parent.name == "skills" and parent.parent.name == ".apm"),
+        None,
+    )
+    if skills_root is None:
+        return False
+    depth = len(source.parent.relative_to(skills_root).parts)
     restored = re.sub(
-        r"\]\(\.\./\.\./\.\./\.apm/skills/([^)]*)\)",
-        r"](../\1)",
+        r"\]\(" + re.escape("../" * (depth + 2) + ".apm/skills/") + r"([^)]*)\)",
+        lambda match: "](" + "../" * depth + match.group(1) + ")",
         deployed_text,
     )
     return restored == source_text

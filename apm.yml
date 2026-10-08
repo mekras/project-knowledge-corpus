@@ -22,7 +22,7 @@ scripts:
     tools/test-apm-lock-artifacts.py; python3
     tools/validate-apm-lock-artifacts.py; python3
     tools/validate-portable-corpus-references.py; python3
-    tools/test-corpus-layout-validator.py; python3
+    tools/test-corpus-layout-validator.py; python3 tools/test-source-admission.py; python3
     tools/test-corpus-operations.py; python3 tools/test-corpus-audit-regressions.py;
     python3 tools/test-corpus-statements.py;
     python3 tools/test-transcription-contract.py; python3
