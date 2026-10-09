@@ -10,10 +10,87 @@ import tempfile
 from pathlib import Path
 from textwrap import dedent
 
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR = REPO_ROOT / ".apm" / "skills" / "kc-inventory" / "scripts" / "validate-corpus-layout.py"
 RECORDER = REPO_ROOT / ".apm" / "skills" / "kc-inventory" / "scripts" / "record-snapshot-verification.py"
+
+
+def test_acquisition_verification() -> None:
+    for acquisition in ("adapter_fetch", "provider_export", "local_file"):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_minimal_corpus(root)
+            unit = root / "data" / "test-source" / "documents" / "captured"
+            write_text(root / "data" / "test-source" / "items.yml", """
+                items:
+                  - id: TEST-ITEM-001
+                    title: "Captured original"
+                    access: "Same as source."
+                    status: active
+                    workflow_stage: indexed
+                    path: documents/captured
+            """)
+            write_text(unit / "item.yml", """
+                id: TEST-ITEM-001
+                title: "Captured original"
+                access: "Same as source."
+                status: active
+                workflow_stage: indexed
+            """)
+            artifact = unit / "snapshot.txt"
+            write_text(artifact, "Original captured on 2026-10-09.\n")
+            evidence = "Acquisition record: original fixture, 2026-10-09, complete text."
+            command = [sys.executable, str(RECORDER), str(unit), str(artifact),
+                       "--acquisition-method", acquisition,
+                       "--verification-method", "acquisition_check",
+                       "--content-scope", "full_text", "--content-match", "verified",
+                       "--scope-completeness", "complete", "--overall-result", "verified",
+                       "--checked-by-role", "fixture", "--checked-at", "2026-10-09",
+                       "--acquired-at", "2026-10-09", "--evidence", evidence]
+            result = subprocess.run(command, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise AssertionError(f"Acquisition verification failed: {result.stderr}")
+            path = unit / "verification.yml"
+            recorded = yaml.safe_load(path.read_text(encoding="utf-8"))
+            if (recorded["verification"]["method"] != "acquisition_check"
+                    or recorded["verification"]["evidence"] != [evidence]
+                    or recorded["hash"]["value"] != hashlib.sha256(artifact.read_bytes()).hexdigest()
+                    or recorded["verification"]["result"]["metadata"]["author"] != "unverified"
+                    or "next_check_at" in recorded):
+                raise AssertionError("Acquisition record lost evidence or confirmed an unchecked property.")
+            item = yaml.safe_load((unit / "item.yml").read_text(encoding="utf-8"))
+            if item["workflow_stage"] != "indexed" or item["item_contract_version"] != 2:
+                raise AssertionError("Recording acquisition skipped the remaining processing stages.")
+            assert_passes(root)
+            original = path.read_text(encoding="utf-8")
+
+            # A missing or false acquisition declaration must not replace a saved check.
+            for rejected_command in (command[:-2], command[:-1] + [" "],
+                                     ["user_provided" if arg == acquisition else arg for arg in command]):
+                rejected = subprocess.run(rejected_command, capture_output=True, text=True)
+                if rejected.returncode != 2 or path.read_text(encoding="utf-8") != original:
+                    raise AssertionError("Invalid acquisition claim replaced the saved verification.")
+
+            for defect in ("user_copy", "missing_evidence", "blank_evidence"):
+                invalid = yaml.safe_load(original)
+                if defect == "user_copy":
+                    invalid["acquisition"]["method"] = "user_provided"
+                elif defect == "missing_evidence":
+                    invalid["verification"].pop("evidence")
+                else:
+                    invalid["verification"]["evidence"] = [" "]
+                path.write_text(yaml.safe_dump(invalid), encoding="utf-8")
+                assert_fails_with(root, "acquisition_check requires")
+            path.write_text(original, encoding="utf-8")
+
+            artifact.write_text("New source version.\n", encoding="utf-8")
+            assert_fails_with(root, "artifact hash does not match verification.yml")
+            artifact.write_text("Original captured on 2026-10-09.\n", encoding="utf-8")
+            # A scheduled refresh does not revoke the historical snapshot's evidence.
+            path.write_text(original + "next_check_at: '2000-01-01'\n", encoding="utf-8")
+            assert_passes(root)
 
 
 def write_text(path: Path, text: str) -> None:
@@ -639,7 +716,7 @@ def main() -> int:
             """,
         )
         result = run_validator(root, strict_verification=True)
-        expected = "legacy item has no verification.yml; external verification and freshness are not recorded"
+        expected = "legacy item has no verification.yml; snapshot verification is not recorded"
         if result.returncode != 0 or expected not in result.stdout:
             raise AssertionError(
                 "strict verification must report an unverified legacy item without failing:\n"
@@ -1385,4 +1462,5 @@ action_policy:
 
 
 if __name__ == "__main__":
+    test_acquisition_verification()
     raise SystemExit(main())

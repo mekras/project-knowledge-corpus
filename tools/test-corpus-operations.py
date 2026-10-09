@@ -923,7 +923,7 @@ def main() -> int:
             "- fetch: 3",
             "- statements: 1",
             "- semantic_review: 1",
-            "- verification: 1",
+            "- verification: 0",
             "- human_decision: 1",
             "- concepts: 1",
             "- impact_audit: 1",
@@ -934,8 +934,8 @@ def main() -> int:
                 raise AssertionError(f"В плане нет строки: {expected_line}")
         if "TEST-INDEX-ONLY-METADATA" in plan.stdout:
             raise AssertionError("Не выбранная единица index_only не должна образовывать массовую очередь.")
-        if "TEST-V2-COMPLETE" not in plan.stdout or "внешняя сверка и актуальность снимка не записаны" not in plan.stdout:
-            raise AssertionError("Legacy-единица без verification.yml не попала в очередь внешней сверки.")
+        if "TEST-V2-COMPLETE" in plan.stdout:
+            raise AssertionError("Legacy-единица без verification.yml создала обязательную повторную сверку.")
         strict_legacy = subprocess.run(
             [sys.executable, str(VALIDATOR), "knowledge", "--strict-verification"],
             cwd=root,
@@ -945,7 +945,7 @@ def main() -> int:
         )
         if (
             strict_legacy.returncode != 0
-            or "legacy item has no verification.yml; external verification and freshness are not recorded"
+            or "legacy item has no verification.yml; snapshot verification is not recorded"
             not in strict_legacy.stdout
         ):
             raise AssertionError("Строгий валидатор не сообщил о legacy-единице без внешней сверки.")
@@ -2042,5 +2042,29 @@ def main() -> int:
     return 0
 
 
+def test_captured_snapshot_still_needs_processing() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        unit = root / "knowledge" / "data" / "test" / "documents" / "normalized"
+        snapshot = unit / "snapshot.txt"
+        snapshot.write_text("Captured original.\n", encoding="utf-8")
+        recorder = REPO_ROOT / ".apm" / "skills" / "kc-inventory" / "scripts" / "record-snapshot-verification.py"
+        subprocess.run([
+            sys.executable, str(recorder), str(unit), str(snapshot),
+            "--acquisition-method", "adapter_fetch", "--verification-method", "acquisition_check",
+            "--evidence", "Original identified, full response captured on 2026-10-09.",
+            "--content-scope", "full_text", "--content-match", "verified",
+            "--scope-completeness", "complete", "--overall-result", "verified",
+            "--checked-by-role", "fixture", "--checked-at", "2026-10-09",
+        ], cwd=root, check=True, capture_output=True, text=True)
+        plan = run(root)
+        if "TEST-NORMALIZED" not in plan.stdout or "- statements: 1" not in plan.stdout:
+            raise AssertionError("Проверка получения преждевременно закрыла очередь извлечения.")
+        if "- verification: 0" not in plan.stdout:
+            raise AssertionError("Проверенное получение создало обязательную повторную сверку.")
+
+
 if __name__ == "__main__":
+    test_captured_snapshot_still_needs_processing()
     raise SystemExit(main())
