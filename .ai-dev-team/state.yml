@@ -2,11 +2,12 @@ product: mekras/ai-dev-team
 applied_version: 0.22.1
 updated_at: 2026-07-30
 setup:
-  operating_context: noncommercial
+  operating_context:
+    kind: noncommercial
   impact_graph:
     status: present
     path: project-impact.json
-    schema_version: 1
+    schema_version: 2
   project_profile:
     forms: [apm-skill-collection, documentation]
     users: [project-developers]

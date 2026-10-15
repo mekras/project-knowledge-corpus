@@ -108,7 +108,7 @@
       "representations": [
         {"path": "AGENTS.md", "role": "canonical"},
         {"path": "CLAUDE.md", "role": "supporting"},
-        {"path": ".ai-dev-team-state.yml", "role": "implementation"},
+        {"path": ".ai-dev-team/state.yml", "role": "implementation"},
         {"path": "docs/ADR/**", "role": "canonical"},
         {"path": "BACKLOG.md", "role": "supporting"},
         {"path": "CHANGELOG.md", "role": "supporting"},

@@ -26,9 +26,9 @@ scripts:
     tools/test-corpus-operations.py; python3 tools/test-corpus-audit-regressions.py;
     python3 tools/test-corpus-statements.py;
     python3 tools/test-transcription-contract.py; python3
-    tools/test-knowledge-evaluation.py; python3
+    tools/test-knowledge-evaluation.py; python3 tools/test-script-utf8.py; python3
     tools/test-run-execution-class.py; python3 tools/test-apm-audit-ci.py'
   evals: python3 tools/run-skill-evals.py "${APM_EVAL_PATH:-.apm/skills}"
 devDependencies:
   apm:
-    - mekras/apm-marketplace/packages/ai-dev-team#ai-dev-team--v0.28.4
+    - mekras/apm-marketplace/packages/ai-dev-team#ai-dev-team--v0.29.1

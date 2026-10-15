@@ -7,7 +7,13 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
+
+# Русские сообщения не должны падать на консоли с однобайтовой кодировкой.
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if _reconfigure is not None:
+        _reconfigure(encoding="utf-8", errors="replace")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -22,6 +28,21 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def collect_skill_dirs(root: Path) -> Iterator[Path]:
+    """Обойти дерево до границы пакета навыка, не спускаясь внутрь него."""
+    if not root.is_dir():
+        return
+    for entry in sorted(root.iterdir()):
+        if entry.name == ".git" or not entry.is_dir():
+            continue
+        if (entry / "SKILL.md").is_file():
+            # Материалы пакета, включая фикстуры со своими SKILL.md, навыками
+            # коллекции не являются и в обход не попадают.
+            yield entry
+        elif not entry.is_symlink():
+            yield from collect_skill_dirs(entry)
+
+
 def find_skill_dirs(paths: list[Path]) -> list[Path]:
     skill_dirs: set[Path] = set()
     for path in paths:
@@ -29,10 +50,7 @@ def find_skill_dirs(paths: list[Path]) -> list[Path]:
         if (path / "SKILL.md").is_file():
             skill_dirs.add(path)
             continue
-        for skill_file in path.rglob("SKILL.md"):
-            if ".git" in skill_file.parts:
-                continue
-            skill_dirs.add(skill_file.parent)
+        skill_dirs.update(collect_skill_dirs(path))
     return sorted(skill_dirs)
 
 
@@ -202,6 +220,9 @@ def validate_case(
             errors.append(f"{label}: duplicate prompt")
         seen_prompts.add(prompt)
 
+    vcs = case.get("workspace_vcs", "git")
+    if not isinstance(vcs, str) or vcs not in {"git", "none"}:
+        errors.append(f"{label}: workspace_vcs must be git or none")
     validate_input_files(case.get("input_files"), label, errors)
 
     validate_expected_output(case.get("expected_output"), label, errors)

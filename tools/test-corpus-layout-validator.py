@@ -823,6 +823,23 @@ def main() -> int:
             strict_concepts=True,
         )
 
+    for version in (1, 2):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_minimal_corpus(root)
+            write_text(root / "concepts.yml", f"concept_contract_version: {version}\nconcepts: []\n")
+            for strict in (False, True):
+                result = run_validator(root, strict_concepts=strict)
+                if result.returncode != 0 or "concepts.yml:" in result.stdout:
+                    raise AssertionError(
+                        f"expected empty concepts v{version} to pass without concept warnings "
+                        f"(strict={strict}), got:\n{result.stdout}"
+                    )
+            for invalid in ("null", "{}", '""'):
+                write_text(root / "concepts.yml", f"concept_contract_version: {version}\nconcepts: {invalid}\n")
+                for strict in (False, True):
+                    assert_fails_with(root, "concepts must be a list", strict_concepts=strict)
+
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         write_minimal_corpus(root)
