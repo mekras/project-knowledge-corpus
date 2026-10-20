@@ -2,30 +2,201 @@
 """Запустить роль из локальной политики с явной моделью и минимальным вводом."""
 from __future__ import annotations
 
-import argparse, json, subprocess, sys, time, tomllib
+import argparse
+import json
+import os
+import runpy
+import subprocess
+import sys
+import time
+import tomllib
+import uuid
 from pathlib import Path
 
-def main():
-    p = argparse.ArgumentParser(); p.add_argument("role"); p.add_argument("--config", type=Path, default=Path("subagents.local.toml")); p.add_argument("--input", action="append", default=[]); p.add_argument("--out", type=Path, default=Path(".codex/subagents")); args=p.parse_args()
-    data=tomllib.loads(args.config.read_text()); role=(data.get("roles") or {}).get(args.role)
-    if not isinstance(role, dict): p.error(f"роль {args.role} не найдена")
-    model, effort, sandbox, adapter = (role.get(k) for k in ("model", "effort", "sandbox", "adapter"))
-    if not all(isinstance(v, str) and v for v in (model, effort, sandbox, adapter)): p.error("у роли обязательны model, effort, sandbox, adapter")
-    task=sys.stdin.read(); files=[]
+# Русские сообщения не должны падать на консоли с однобайтовой кодировкой.
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if _reconfigure is not None:
+        _reconfigure(encoding="utf-8", errors="replace")
+
+verify_model = runpy.run_path(
+    str(Path(__file__).resolve().parent / "lib/model_evidence.py")
+)["verify_model"]
+run_storage = runpy.run_path(str(Path(__file__).resolve().parent / "lib/run_storage.py"))
+
+
+def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] in {"--record-acceptance", "--check-acceptance", "--finish-task"}:
+        runner = runpy.run_path(str(Path(__file__).resolve().parent / "run-execution-class"))
+        return runner["main"]()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("role")
+    parser.add_argument("--config", type=Path, default=Path("subagents.local.toml"))
+    parser.add_argument("--input", action="append", default=[])
+    parser.add_argument("--out", type=Path, help="каталог данных запусков: явный путь, policy_runtime.run_records_dir либо .local/subagents")
+    parser.add_argument("--git-storage", action="store_true",
+                        help="фактическая VCS — Git и проект разрешает автоматическую защиту каталога")
+    parser.add_argument("--storage-verified", action="store_true",
+                        help="родитель проверил исключение каталога из фактической VCS или размещение вне её области")
+    parser.add_argument("--retain-for", default=None,
+                        help="сохранить данные после задачи по явному запросу пользователя, указав причину")
+    parser.add_argument(
+        "--obligation",
+        help="идентификатор обязательства профильной роли, которое обслуживает запуск",
+    )
+    args = parser.parse_args()
+    if args.retain_for is not None and not args.retain_for.strip():
+        parser.error("--retain-for требует непустую причину хранения")
+
+    data = tomllib.loads(args.config.read_text(encoding="utf-8"))
+    if args.out is None:
+        records_dir = data.get("policy_runtime", {}).get("run_records_dir", run_storage["DEFAULT_RUNS_DIR"])
+        if not isinstance(records_dir, str) or not records_dir.strip():
+            parser.error("policy_runtime.run_records_dir должен быть непустым путём")
+        args.out = Path(records_dir)
+    role = (data.get("roles") or {}).get(args.role)
+    if not isinstance(role, dict):
+        parser.error(f"роль {args.role} не найдена")
+    model, effort, sandbox, adapter = (
+        role.get(key) for key in ("model", "effort", "sandbox", "adapter")
+    )
+    if not all(
+        isinstance(value, str) and value for value in (model, effort, sandbox, adapter)
+    ):
+        parser.error("у роли обязательны model, effort, sandbox, adapter")
+
+    files = []
     for name in args.input:
-        path=Path(name).resolve()
-        if not path.is_file(): p.error(f"входной файл не найден: {name}")
+        path = Path(name).resolve()
+        if not path.is_file():
+            parser.error(f"входной файл не найден: {name}")
         files.append(str(path))
-    prompt=json.dumps({"role":args.role,"contract":role.get("contract",{}),"inputs":files,"task":task},ensure_ascii=False)
-    args.out.mkdir(parents=True,exist_ok=True); started=time.time(); final=args.out/f"{int(started)}-{args.role}.final.txt"; log=args.out/f"{int(started)}-{args.role}.json"; journal=args.out/f"{int(started)}-{args.role}.jsonl"
-    command=[adapter, model, effort, sandbox]; env={**__import__("os").environ, "CODEX_ROLE_LOG": str(journal)}; completed=subprocess.run(command,input=prompt,text=True,capture_output=True,env=env)
-    final.write_text(completed.stdout,encoding="utf-8")
-    record={"role":args.role,"assigned_model":model,"effort":effort,"sandbox":sandbox,"inputs":files,"final":str(final),"journal":str(journal),"seconds":round(time.time()-started,3),"returncode":completed.returncode, "contract":role.get("contract", {})}
-    # Adapters must write the factual model as first JSON line when available.
+    task = sys.stdin.read()
+    if not task.strip():
+        parser.error("задание для роли пусто: передайте непустой текст через stdin")
+    prompt = json.dumps(
+        {
+            "role": args.role,
+            "contract": role.get("contract", {}),
+            "inputs": files,
+            "task": task,
+        },
+        ensure_ascii=False,
+    )
+
+    started = time.time()
+    run_id = str(uuid.uuid4())
     try:
-        header=json.loads(completed.stdout.splitlines()[0]); record["actual_model"]=header.get("model"); record["usage"]=header.get("usage")
-    except (IndexError,json.JSONDecodeError,AttributeError): record["actual_model"]=None
-    log.write_text(json.dumps(record,ensure_ascii=False,indent=2),encoding="utf-8")
-    if completed.returncode or record["actual_model"] != model: raise SystemExit("роль не запущена на назначенной модели")
-    print(json.dumps(record,ensure_ascii=False))
-if __name__ == "__main__": main()
+        directory = run_storage["create_run_directory"](args.out, run_id, storage_verified=args.storage_verified, git_storage=args.git_storage)
+    except (OSError, ValueError) as error:
+        parser.error(f"каталог данных запусков недоступен для записи: {error}. Модель не запускалась.")
+    paths = run_storage["artifact_paths"](directory)
+    final, transport, transport_header, log, journal = (
+        paths[key] for key in ("final", "transport_path", "transport_header_path", "record_path", "journal")
+    )
+    initial_record = {
+        "run_id": run_id, "record_path": str(log), "role": args.role,
+        "storage": {"schema_version": 1, "retain_reason": (args.retain_for or "").strip()},
+        "status": "started", "started_at": started,
+        "assigned_model": model, "assigned_effort": effort,
+        **{key: str(path) for key, path in paths.items()},
+        "result_path": str(final), "transport_header_path": None,
+    }
+    log.write_text(json.dumps(initial_record, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        completed = subprocess.run(
+            [adapter, model, effort, sandbox],
+            input=prompt,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            env={**os.environ, "CODEX_ROLE_LOG": str(journal), "CLAUDE_ROLE_LOG": str(journal),
+                 "CODEX_ROLE_STDERR": str(paths["codex_stderr"])},
+            check=False,
+        )
+    except OSError as error:
+        record = {**initial_record, "status": "failed", "stop_reason": "launch_error",
+                  "error": str(error), "completed_at": time.time(), "returncode": None}
+        log.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(json.dumps(record, ensure_ascii=False), file=sys.stderr)
+        return 2
+    paths["stderr"].write_text(completed.stderr, encoding="utf-8")
+    try:
+        header_line, _separator, result = completed.stdout.partition("\n")
+        header = json.loads(header_line)
+    except (IndexError, json.JSONDecodeError):
+        header = {}
+        header_line = ""
+        result = completed.stdout
+    transport.write_text(completed.stdout, encoding="utf-8")
+    if header_line:
+        transport_header.write_text(header_line + "\n", encoding="utf-8")
+    final.write_text(result, encoding="utf-8")
+    evidence = verify_model(
+        header,
+        journal,
+        assigned_model=model,
+        assigned_effort=effort,
+    )
+    actual_model = evidence["actual_model"]
+    if actual_model is not None:
+        evidence["model_matches"] = actual_model == model
+        if evidence["client_model_status"] == "confirmed":
+            evidence["client_model_matches"] = evidence["model_matches"]
+        if evidence["server_model_status"] == "confirmed":
+            evidence["server_model_matches"] = evidence["model_matches"]
+    if (
+        evidence["model_matches"] is True
+        and evidence["client_model_status"] == "confirmed"
+        and evidence["effort_matches"] is not False
+    ):
+        evidence["client_route_status"] = (
+            "confirmed"
+            if evidence["effort_matches"] is True
+            else "model_only"
+        )
+    record = {
+        **initial_record,
+        "run_id": run_id,
+        "role": args.role,
+        "assigned_model": model,
+        "assigned_effort": effort,
+        **evidence,
+        "reported_model": header.get("model") if isinstance(header, dict) else None,
+        "reported_effort": header.get("effort") if isinstance(header, dict) else None,
+        "usage": header.get("usage") if isinstance(header, dict) else None,
+        "effort": effort,
+        "sandbox": sandbox,
+        "inputs": files,
+        "final": str(final),
+        "result_path": str(final),
+        "transport_path": str(transport),
+        "transport_header_path": str(transport_header) if header_line else None,
+        "result_available": final.is_file(),
+        "result_usable": bool(result.strip()) and completed.returncode == 0,
+        "stop_reason": "process_exit_nonzero" if completed.returncode else ("empty_model_result" if not result.strip() else None),
+        "status": "completed" if completed.returncode == 0 and result.strip() else "failed",
+        "completed_at": time.time(),
+        "journal": str(journal),
+        "seconds": round(time.time() - started, 3),
+        "returncode": completed.returncode,
+        "contract": role.get("contract", {}),
+    }
+    if args.obligation is not None:
+        record["obligation_id"] = args.obligation
+    log.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    if (
+        completed.returncode
+        or record["model_matches"] is not True
+        or record["client_route_status"] in {"unconfirmed", "mismatch", "conflict"}
+    ):
+        print(json.dumps(record, ensure_ascii=False), file=sys.stderr)
+        return 1
+    print(json.dumps(record, ensure_ascii=False))
+    print("После приёмки и завершения всей задачи вызовите --finish-task для удаления временных данных этого запуска.", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -30,3 +30,110 @@ setup:
         index: docs/ADR/README.md
   knowledge:
     status: declined
+  review:
+    checked_at: 2026-10-19
+    method: self-review
+    directions:
+      - name: рабочий контекст проекта
+        status: сделано
+        basis: ранее принятое решение
+        evidence: setup.operating_context.kind — noncommercial
+        limitations: []
+      - name: профиль проекта
+        status: сделано
+        basis: ранее принятый профиль публичной коллекции APM и документации
+        evidence: setup.project_profile, README.md, apm.yml, .apm/skills/
+        limitations: []
+      - name: концепция проекта и указатель
+        status: заблокировано
+        basis: концепция в начале README.md, указатель в AGENTS.md
+        evidence: фрагмент README.md до ссылки «Подробнее…» прочитан
+        limitations: [профильная проверка ait-docs-concept ещё не выполнена]
+        next_step: проверить существующую концепцию через ait-docs-concept
+      - name: README.md
+        status: заблокировано
+        basis: основной вход для пользователей коллекции
+        evidence: README.md содержит установку через APM и первые действия
+        limitations: [профильная проверка ait-readme ещё не выполнена]
+        next_step: выполнить ait-readme
+      - name: правила для агентов и клиентские инструкции
+        status: заблокировано
+        basis: рукописный AGENTS.md и ссылка на него из CLAUDE.md
+        evidence: входная цепочка открыта в текущей сессии, строгий аудит APM завершился с кодом 0
+        limitations: [проверка остальных правил настройки ещё не завершена, поведение новой сессии не испытано]
+        next_step: завершить аудит ai-audit-agent-rules в пределах настройки проекта
+      - name: журнал изменений
+        status: заблокировано
+        basis: setup.changelog указывает на CHANGELOG.md
+        evidence: AGENTS.md требует ait-changelog для заметных изменений
+        limitations: [сопровождение журнала в рамках всей настройки ещё не проверено]
+        next_step: проверить действующий договор журнала
+      - name: журналы решений
+        status: заблокировано
+        basis: setup.decision_records указывает на docs/ADR/
+        evidence: ранее принятый журнал ADR сохранён в состоянии
+        limitations: [предметная граница и договор журнала ещё не проверены]
+        next_step: проверить журнал через ait-decisions
+      - name: корпус знаний
+        status: отложено
+        basis: ранее принятое решение setup.knowledge.status — declined
+        evidence: отказ сохранён в отслеживаемом состоянии проекта
+        limitations: [основания собственного корпуса не использовались]
+      - name: разработка на основе спецификаций
+        status: заблокировано
+        basis: в состоянии проекта нет принятого подхода или результата оценки
+        evidence: проверен текущий состав setup
+        limitations: [применимость ещё не оценена]
+        next_step: выполнить предусмотренную ait-setup оценку применимости
+      - name: граф влияния и указатель
+        status: сделано
+        basis: AGENTS.md и setup.impact_graph указывают на project-impact.json
+        evidence: impact_graph.py validate — код 0, coverage — 257 сопоставленных путей, несопоставленных нет
+        limitations: []
+      - name: .gitignore
+        status: заблокировано
+        basis: Git используется, проекции APM исключены
+        evidence: прочитан .gitignore, .agents, .claude, .codex и apm_modules исключены
+        limitations: [полнота защиты локальных данных ещё не проверена]
+        next_step: проверить исключения локальных настроек и артефактов
+      - name: лицензия
+        status: заблокировано
+        basis: публичная коллекция, в apm.yml указана MIT
+        evidence: проверены профиль и метаданные apm.yml
+        limitations: [профильная проверка лицензии ещё не выполнена]
+        next_step: выполнить ait-licensing
+      - name: подагенты
+        status: заблокировано
+        basis: истёк срок проверки локальной политики
+        evidence: subagents.local.toml содержит дату проверки 2026-07-31 и интервал 30 дней
+        limitations: [проверка через ai-setup-subagents ещё не завершена, делегирование не испытывалось]
+        next_step: проверить локальную политику через ai-setup-subagents
+      - name: индекс Git, сообщения коммитов и проверки
+        status: заблокировано
+        basis: Git используется, принята схема pro-git и добавление всех неигнорируемых изменений
+        evidence: разрешение PyYAML 6.0.3 оформлено и проверено, исправленный запускатель установлен из локального исходника ai-agent-supervisor, проверка переносимости — код 0 с 19 контрактными сценариями, apm run tests — код 0, четыре операции без PyYAML отказали без изменения данных
+        limitations: [исправление запускателя пока не опубликовано, рабочая копия отличается от оснастки закреплённого выпуска]
+        next_step: после выпуска ai-agent-supervisor обновить закреплённую зависимость и сверить оснастку с выпуском
+    version_review:
+      from: 0.22.1
+      target: 0.29.7
+      status: in_progress
+      actions:
+        - version: 0.27.6
+          result: реестр mekras зарегистрирован, новая зависимость уже установлена, повторное обновление не запускалось
+        - version: 0.28.0
+          result: AGENTS.md содержит пути основного и запасного маршрутизаторов и обязательный показ маршрута
+        - version: 0.29.2
+          result: проверка необходимости изменения прежних ограничений независимого исполнителя ещё не завершена
+        - version: 0.29.5
+          result: у всех классов исполнения задано булево writes, назначение только для чтения не испытывалось
+        - version: 0.29.6
+          result: цепочка загрузки навыка общения и правил текстов проверена в обеих установленных проекциях
+    tooling_candidate:
+      status: unpublished_local_source
+      repository: https://github.com/mekras/ai-agent-supervisor
+      source_path: .apm/skills/ai-setup-apm/scripts/eval-tools/run-skill-script-contract-tests.py
+      deployed_path: tools/run-skill-script-contract-tests.py
+      sha256: 36f9046f7ec52caf37be544741e7e1501ef7daf0ca0764460f514587f14cc9e8
+      approval: явное поручение пользователя исправить отсутствующие входы и обновить рабочую оснастку
+      verification: регрессия воспроизведена на прежнем коде, тесты исправления и полные тесты обоих проектов прошли

@@ -16,7 +16,7 @@ RUNNER = ROOT / "tools" / "run-execution-class"
 
 
 class RunExecutionClassTests(unittest.TestCase):
-    def test_records_model_agent_path_and_contract(self) -> None:
+    def test_records_contract_without_trusting_reported_model(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
             adapter = temporary / "adapter"
@@ -65,6 +65,7 @@ class RunExecutionClassTests(unittest.TestCase):
                     str(config),
                     "--out",
                     str(output),
+                    "--storage-verified",
                 ],
                 input="Проверь один факт.",
                 text=True,
@@ -72,12 +73,14 @@ class RunExecutionClassTests(unittest.TestCase):
                 check=False,
             )
 
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            record = json.loads(completed.stdout)
+            self.assertEqual(completed.returncode, 3, completed.stderr)
+            record = json.loads(completed.stderr)
             self.assertEqual(record["assigned_model"], "test-model")
-            self.assertEqual(record["actual_model"], "test-model")
-            self.assertTrue(record["model_matches"])
-            self.assertEqual(record["agent_path"], str(adapter.resolve()))
+            self.assertEqual(record["reported_model"], "test-model")
+            self.assertIsNone(record["actual_model"])
+            self.assertIsNone(record["model_matches"])
+            self.assertEqual(record["model_status"], "unconfirmed")
+            self.assertEqual(record["command"]["adapter_executable"], adapter.name)
             self.assertEqual(record["contract"]["writes"], False)
             self.assertTrue(Path(record["journal"]).name.endswith(".jsonl"))
 
@@ -114,6 +117,7 @@ class RunExecutionClassTests(unittest.TestCase):
                     str(config),
                     "--out",
                     str(temporary / "output"),
+                    "--storage-verified",
                 ],
                 input="Правка.",
                 text=True,

@@ -436,6 +436,7 @@ def load_cases(
         operations = []
     operation_prefixes: dict[str, tuple[Path, list[str]]] = {}
     operation_inputs: dict[str, list[Path]] = {}
+    operation_absent_inputs: dict[str, list[Path]] = {}
     for index, operation in enumerate(operations):
         label = f"{contract}: operations[{index}]"
         if not isinstance(operation, dict):
@@ -478,8 +479,20 @@ def load_cases(
                     )
                 else:
                     declared_inputs.append(input_path)
+        absent_values = string_list(operation.get("absent_inputs", []))
+        declared_absent: list[Path] = []
+        if absent_values is None:
+            errors.append(f"{label}.absent_inputs: нужен массив непустых строк")
+        else:
+            for value in absent_values:
+                path = safe_relative(value)
+                if path is None:
+                    errors.append(f"{label}.absent_inputs: нужен безопасный относительный путь, получено {value!r}")
+                else:
+                    declared_absent.append(path)
         operation_prefixes[identifier] = (script, prefix)
         operation_inputs[identifier] = declared_inputs
+        operation_absent_inputs[identifier] = declared_absent
     missing_operations = sorted(
         expected_scripts - {script for script, _ in operation_prefixes.values()},
     )
@@ -604,6 +617,11 @@ def load_cases(
                 operation_id: [path.as_posix() for path in operation_inputs[operation_id]]
                 for operation_id in covers
                 if operation_id in operation_inputs
+            }
+            runnable_case["_operation_absent_inputs"] = {
+                operation_id: [path.as_posix() for path in operation_absent_inputs[operation_id]]
+                for operation_id in covers
+                if operation_id in operation_absent_inputs
             }
             valid_cases.append(runnable_case)
     missing_operation_success = sorted(set(operation_prefixes) - successfully_covered_operations)
@@ -818,6 +836,7 @@ def run_case(
     skill: Path,
     case: dict[str, Any],
     coverage: dict[tuple[Path, Path], set[int]],
+    absence_coverage: dict[tuple[Path, str], set[str]],
 ) -> list[str]:
     source_fixture = skill / case["fixture"]
     script = (skill / case["script"]).resolve()
@@ -906,8 +925,12 @@ def run_case(
         errors.extend(verify_output(case, fixture))
         if expected_exit_code == 0:
             observed = observed_conditional_inputs(trace_log)
+            if not errors:
+                for operation_id in case.get("_operation_absent_inputs", {}):
+                    absence_coverage.setdefault((skill, operation_id), set()).update(observed)
             for operation_id, declared_values in case.get("_operation_inputs", {}).items():
-                undeclared = sorted(observed - set(declared_values))
+                declared_absent = case.get("_operation_absent_inputs", {}).get(operation_id, [])
+                undeclared = sorted(observed - set(declared_values) - set(declared_absent))
                 for path in undeclared:
                     errors.append(
                         f"операция {operation_id!r} проверяет отсутствующий путь "
@@ -932,6 +955,8 @@ def main() -> int:
     run_errors: list[str] = []
     count = 0
     coverage: dict[tuple[Path, Path], set[int]] = {}
+    absence_coverage: dict[tuple[Path, str], set[str]] = {}
+    skipped_operations: set[tuple[Path, str]] = set()
     # Сценарий с объявленной внешней командой не проверяет поведение скрипта в
     # среде без неё. Такая среда — не нарушение контракта, поэтому сценарий
     # пропускается, а неполнота покрытия называется явно.
@@ -945,13 +970,28 @@ def main() -> int:
                     f"{skill}::{case['id']}: сценарий пропущен, в этой среде нет "
                     f"внешних команд: {', '.join(absent)}",
                 )
+                skipped_operations.update((skill, operation_id) for operation_id in case.get("covers", []))
                 script_rel = safe_relative(case.get("script"))
                 if script_rel is not None:
                     incomplete.add((skill, script_rel))
                 continue
             count += 1
-            for error in run_case(skill, case, coverage):
+            for error in run_case(skill, case, coverage, absence_coverage):
                 run_errors.append(f"{skill}::{case['id']}: {error}")
+    for skill, cases in cases_by_skill.items():
+        expected_absence: dict[str, set[str]] = {}
+        for case in cases:
+            for operation_id, paths in case.get("_operation_absent_inputs", {}).items():
+                expected_absence.setdefault(operation_id, set()).update(paths)
+        for operation_id, paths in expected_absence.items():
+            if (skill, operation_id) in skipped_operations:
+                continue
+            observed = absence_coverage.get((skill, operation_id), set())
+            for path in sorted(paths - observed):
+                run_errors.append(
+                    f"{skill}: операция {operation_id!r}: отсутствие {path} из absent_inputs "
+                    "не подтверждено успешным сценарием"
+                )
     for message in skipped:
         print(message)
     checked_allowances: set[tuple[Path, Path]] = set()

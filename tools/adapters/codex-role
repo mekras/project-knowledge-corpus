@@ -2,28 +2,131 @@
 """Запуск роли Codex: модель, усилие, режим доступа; задача приходит через stdin."""
 from __future__ import annotations
 
-import json, os, subprocess, sys, tempfile
+import json, os, runpy, subprocess, sys, tempfile, threading
 from pathlib import Path
+
+
+verify_model = runpy.run_path(
+    str(Path(__file__).resolve().parents[1] / "lib/model_evidence.py")
+)["verify_model"]
+
+# Русские сообщения не должны падать на консоли с однобайтовой кодировкой.
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if _reconfigure is not None:
+        _reconfigure(encoding="utf-8", errors="replace")
 
 if len(sys.argv) != 4:
     raise SystemExit("Использование: codex-role <модель> <усилие> <режим>")
 model, effort, sandbox = sys.argv[1:]
+
+
+def prepare_prompt(payload: str) -> str:
+    """Передать дочернему Codex роль, сохранив все проектные инструкции."""
+
+    try:
+        request = json.loads(payload)
+    except json.JSONDecodeError:
+        return payload
+    assignment = (
+        request.get("role_assignment") if isinstance(request, dict) else None
+    )
+    if not isinstance(assignment, dict) or assignment.get("role") != "child_executor":
+        return payload
+    return (
+        "ROLE_ASSIGNMENT: child_executor\n"
+        "REDELEGATION: forbidden_without_explicit_permission\n"
+        "Вы — дочерний исполнитель уже выбранного родителем класса. "
+        "Загрузите и соблюдайте все доступные проектные инструкции, включая "
+        "AGENTS.md, но выполните только переданную ограниченную подзадачу. "
+        "Не принимайте родительское решение о маршруте, не запускайте этот "
+        "класс повторно и не передавайте задачу другому исполнителю. "
+        "Переделегирование допустимо только при отдельном явном разрешении в "
+        "role_assignment. Сохраняйте контракт класса и режим песочницы.\n\n"
+        "Транспортный пакет задания:\n"
+        + payload
+    )
+
+
 with tempfile.TemporaryDirectory() as directory:
     final = Path(directory) / "final.txt"
-    run = subprocess.run(["codex", "exec", "--json", "--color", "never", "--strict-config", "--skip-git-repo-check", "--sandbox", sandbox, "--model", model, "-c", f'model_reasoning_effort="{effort}"', "--output-last-message", str(final), "-"], input=sys.stdin.read(), text=True, capture_output=True)
     raw_log = os.environ.get("CODEX_ROLE_LOG")
-    if raw_log:
-        Path(raw_log).write_text(run.stdout, encoding="utf-8")
+    raw_stderr = os.environ.get("CODEX_ROLE_STDERR")
+    log_path = Path(raw_log) if raw_log else None
+    stderr_path = Path(raw_stderr) if raw_stderr else None
+    for path in (log_path, stderr_path):
+        if path is not None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+    run = subprocess.Popen(
+        ["codex", "exec", "--json", "--color", "never", "--strict-config", "--skip-git-repo-check", "--sandbox", sandbox, "--model", model, "-c", f'model_reasoning_effort="{effort}"', "--output-last-message", str(final), "-"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert run.stdin is not None
+    assert run.stdout is not None
+    assert run.stderr is not None
+    run.stdin.write(prepare_prompt(sys.stdin.read()))
+    run.stdin.close()
+
+    def copy_stream(stream: object, path: Path | None, chunks: list[str]) -> None:
+        destination = path.open("a", encoding="utf-8") if path is not None else None
+        try:
+            while chunk := stream.readline():  # type: ignore[union-attr]
+                chunks.append(chunk)
+                if destination is not None:
+                    destination.write(chunk)
+                    destination.flush()
+        finally:
+            if destination is not None:
+                destination.close()
+
+    stdout_chunks: list[str] = []
+    stderr_chunks: list[str] = []
+    readers = [
+        threading.Thread(target=copy_stream, args=(run.stdout, log_path, stdout_chunks)),
+        threading.Thread(target=copy_stream, args=(run.stderr, stderr_path, stderr_chunks)),
+    ]
+    for reader in readers:
+        reader.start()
+    returncode = run.wait()
+    for reader in readers:
+        reader.join()
+    stdout = "".join(stdout_chunks)
+    stderr = "".join(stderr_chunks)
     usage = None
-    for line in run.stdout.splitlines():
+    turn_completed = False
+    for line in stdout.splitlines():
         try:
             event = json.loads(line)
-            if event.get("type") == "turn.completed": usage = event.get("usage")
+            if event.get("type") == "turn.completed":
+                usage = event.get("usage")
+                turn_completed = True
         except json.JSONDecodeError: pass
-    # Явный параметр и журнал фиксируют фактическую конфигурацию отдельного
-    # процесса; встроенный fan-out для этой гарантии не используется.
-    actual = model if run.returncode == 0 else None
-    print(json.dumps({"model": actual, "usage": usage}, ensure_ascii=False))
+    evidence = verify_model(
+        {},
+        log_path if log_path is not None else Path(os.devnull),
+        assigned_model=model,
+        assigned_effort=effort,
+    )
+    print(json.dumps({
+        "model": evidence["actual_model"],
+        "model_evidence": evidence["model_evidence"],
+        "effort": evidence["actual_effort"],
+        "effort_evidence": evidence["effort_evidence"],
+        "execution_evidence": evidence["execution_evidence"],
+        "model_notice": (
+            None
+            if evidence["model_status"] == "confirmed"
+            else "Фактическая модель не подтверждена"
+        ),
+        "usage": usage,
+        "turn_completed": turn_completed,
+    }, ensure_ascii=False))
     if final.exists(): print(final.read_text(encoding="utf-8"), end="")
-    if run.returncode: print(run.stderr, file=sys.stderr, end="")
-    raise SystemExit(run.returncode)
+    if returncode: print(stderr, file=sys.stderr, end="")
+    raise SystemExit(returncode)

@@ -18,7 +18,8 @@ scripts:
     tools/validate-skill-descriptions.py "$target"; python3
     tools/validate-hidden-unicode.py; python3 tools/validate-trigger-evals.py
     "$target" --require-all; python3 tools/validate-skill-result-evals.py
-    "$target"; python3 tools/test-run-skill-evals.py; python3
+    "$target"; python3 tools/validate-skill-portability.py "$target"; python3
+    tools/test-run-skill-evals.py; python3
     tools/test-apm-lock-artifacts.py; python3
     tools/validate-apm-lock-artifacts.py; python3
     tools/validate-portable-corpus-references.py; python3
@@ -27,8 +28,9 @@ scripts:
     python3 tools/test-corpus-statements.py;
     python3 tools/test-transcription-contract.py; python3
     tools/test-knowledge-evaluation.py; python3 tools/test-script-utf8.py; python3
+    tools/test-pyyaml-dependencies.py; python3
     tools/test-run-execution-class.py; python3 tools/test-apm-audit-ci.py'
   evals: python3 tools/run-skill-evals.py "${APM_EVAL_PATH:-.apm/skills}"
 devDependencies:
   apm:
-    - mekras/apm-marketplace/packages/ai-dev-team#ai-dev-team--v0.29.1
+    - mekras/apm-marketplace/packages/ai-dev-team#ai-dev-team--v0.29.7
