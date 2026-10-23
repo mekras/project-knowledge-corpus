@@ -12,8 +12,12 @@
 непроверенной. Во время успешного сценария запускатель наблюдает действительно
 отсутствующие пути внутри фикстуры. Отрицательный результат проверки типа
 существующего пути не считается отсутствием. Запускатель исключает пути,
-созданные или заменённые самой операцией, и отклоняет оставшиеся пути, не
-объявленные в ``inputs`` покрываемой операции.
+созданные или заменённые самой операцией, и требует объявить оставшиеся пути.
+Они учитываются в ``inputs`` покрываемой операции. В версии контракта 3 ожидаемое
+отсутствие файла или каталога объявляется в ``cases[].absent_inputs`` записями
+с ``path`` и ``reason``. Путь должен отсутствовать после подготовки фикстуры
+и проверяться командой. Такое объявление действует только в своём сценарии
+и не отменяет покрытие настоящих входов. Версия 2 продолжает поддерживаться.
 Если в контракте есть независимая ошибка полноты, запускатель всё равно
 выполняет корректно описанные сценарии и сообщает все найденные ошибки за один
 запуск.
@@ -25,7 +29,9 @@
 каждого публичного скрипта выполнили сценарии. Функция скрипта, ни одна строка
 которой не выполнена ни одним сценарием, считается непроверенной: это ошибка,
 если функция не перечислена в ``unexercised_functions`` контракта с указанием
-скрипта, полного имени и причины. Запись о фактически выполненной функции
+скрипта, полного имени и причины. Созданный компилятором код аннотаций
+не считается отдельной функцией. Пользовательская функция с тем же именем
+проверяется по строкам её собственного тела. Запись о фактически выполненной функции
 устаревает и тоже считается ошибкой. Отчёт о прочих невыполненных строках не
 меняет код возврата, но является обязательной очередью проверки для аудита
 поставляемой автоматизации.
@@ -34,6 +40,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import shutil
@@ -407,6 +414,41 @@ def load_unexercised_allowances(
     return allowances
 
 
+def load_absent_inputs(
+    case: dict[str, Any], version: int, errors: list[str], label: str,
+) -> dict[str, str]:
+    """Прочитать разрешения отсутствия, ограниченные одним сценарием."""
+    if "absent_inputs" not in case:
+        return {}
+    if version != 3:
+        errors.append(f"{label}.absent_inputs: требуется version: 3")
+        return {}
+    entries = case["absent_inputs"]
+    if not isinstance(entries, list):
+        errors.append(f"{label}.absent_inputs: нужен массив записей с path и reason")
+        return {}
+    result: dict[str, str] = {}
+    for index, entry in enumerate(entries):
+        entry_label = f"{label}.absent_inputs[{index}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{entry_label}: нужна запись с path и reason")
+            continue
+        path = safe_relative(entry.get("path"))
+        reason = entry.get("reason")
+        if path is None:
+            errors.append(f"{entry_label}.path: нужен безопасный относительный путь")
+        if not isinstance(reason, str) or not reason.strip():
+            errors.append(f"{entry_label}.reason: нужна непустая причина")
+        if path is None or not isinstance(reason, str) or not reason.strip():
+            continue
+        value = path.as_posix()
+        if value in result:
+            errors.append(f"{entry_label}.path: повтор {value!r}")
+        else:
+            result[value] = reason.strip()
+    return result
+
+
 def load_cases(
     skill: Path,
     errors: list[str],
@@ -421,8 +463,8 @@ def load_cases(
     except json.JSONDecodeError as exc:
         errors.append(f"{contract}: JSON не разобран: {exc}")
         return [], {}
-    if not isinstance(data, dict) or data.get("version") != 2:
-        errors.append(f"{contract}: нужен объект с version: 2")
+    if not isinstance(data, dict) or data.get("version") not in (2, 3):
+        errors.append(f"{contract}: нужен объект с version: 2 или version: 3")
         return [], {}
     cases = data.get("cases")
     if not isinstance(cases, list) or not cases:
@@ -436,12 +478,16 @@ def load_cases(
         operations = []
     operation_prefixes: dict[str, tuple[Path, list[str]]] = {}
     operation_inputs: dict[str, list[Path]] = {}
-    operation_absent_inputs: dict[str, list[Path]] = {}
     for index, operation in enumerate(operations):
         label = f"{contract}: operations[{index}]"
         if not isinstance(operation, dict):
             errors.append(f"{label}: должен быть объект")
             continue
+        if "absent_inputs" in operation:
+            errors.append(
+                f"{label}.absent_inputs: перенеси объявления в cases[].absent_inputs "
+                "с path и reason и укажи version: 3",
+            )
         identifier = operation.get("id")
         if not isinstance(identifier, str) or not identifier:
             errors.append(f"{label}.id: нужна непустая строка")
@@ -479,20 +525,8 @@ def load_cases(
                     )
                 else:
                     declared_inputs.append(input_path)
-        absent_values = string_list(operation.get("absent_inputs", []))
-        declared_absent: list[Path] = []
-        if absent_values is None:
-            errors.append(f"{label}.absent_inputs: нужен массив непустых строк")
-        else:
-            for value in absent_values:
-                path = safe_relative(value)
-                if path is None:
-                    errors.append(f"{label}.absent_inputs: нужен безопасный относительный путь, получено {value!r}")
-                else:
-                    declared_absent.append(path)
         operation_prefixes[identifier] = (script, prefix)
         operation_inputs[identifier] = declared_inputs
-        operation_absent_inputs[identifier] = declared_absent
     missing_operations = sorted(
         expected_scripts - {script for script, _ in operation_prefixes.values()},
     )
@@ -510,6 +544,7 @@ def load_cases(
         if not isinstance(case, dict):
             errors.append(f"{label}: должен быть объект")
             continue
+        absent_inputs = load_absent_inputs(case, data["version"], errors, label)
         identifier = case.get("id")
         if not isinstance(identifier, str) or not identifier:
             errors.append(f"{label}.id: нужна непустая строка")
@@ -613,15 +648,11 @@ def load_cases(
                 errors.append(f"{label}.expect: нужен хотя бы один проверяемый результат")
         if is_runnable_case(skill, case):
             runnable_case = dict(case)
+            runnable_case["_absent_inputs"] = absent_inputs
             runnable_case["_operation_inputs"] = {
                 operation_id: [path.as_posix() for path in operation_inputs[operation_id]]
                 for operation_id in covers
                 if operation_id in operation_inputs
-            }
-            runnable_case["_operation_absent_inputs"] = {
-                operation_id: [path.as_posix() for path in operation_absent_inputs[operation_id]]
-                for operation_id in covers
-                if operation_id in operation_absent_inputs
             }
             valid_cases.append(runnable_case)
     missing_operation_success = sorted(set(operation_prefixes) - successfully_covered_operations)
@@ -700,11 +731,25 @@ def script_functions(script: Path) -> dict[str, set[int]]:
     """Собрать функции скрипта и номера строк, исполняемых только их телом.
 
     Строка ``def`` исполняется объемлющим кодом при определении функции,
-    поэтому строки объемлющего кода исключаются: остаются строки, которые
-    выполняются только при фактическом вызове функции.
+    поэтому строки объемлющего кода исключаются. Определения и границы тел
+    берутся из исходника: код аннотаций Python 3.14 не является отдельной
+    пользовательской функцией, даже если его имя совпадает с её именем.
     """
     source = script.read_text(encoding="utf-8")
     code = compile(source, str(script), "exec")
+    source_lines = source.splitlines()
+    definitions: dict[tuple[str, int], set[int]] = {}
+    for node in ast.walk(ast.parse(source, filename=str(script))):
+        # Сохраняем прежний учёт тел классов вместе с функциями и методами.
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            first_line = min([node.lineno, *(item.lineno for item in node.decorator_list)])
+            first_body_line = node.body[0].lineno
+            # Общая строка сигнатуры и тела не различает их выполнение.
+            if source_lines[first_body_line - 1][:node.body[0].col_offset].strip():
+                first_body_line += 1
+            definitions[(node.name, first_line)] = set(
+                range(first_body_line, node.end_lineno + 1)
+            )
     functions: dict[str, set[int]] = {}
     stack: list[tuple[types.CodeType, set[int]]] = [(code, set())]
     while stack:
@@ -712,9 +757,10 @@ def script_functions(script: Path) -> dict[str, set[int]]:
         own = {
             line for _, _, line in current.co_lines() if line is not None and line > 0
         }
-        if current.co_name != "<module>" and not current.co_name.startswith("<"):
+        body = definitions.get((current.co_name, current.co_firstlineno), set())
+        if body:
             name = getattr(current, "co_qualname", current.co_name)
-            body_lines = own - enclosing
+            body_lines = (own - enclosing) & body
             if body_lines:
                 functions.setdefault(name, set()).update(body_lines)
         stack.extend(
@@ -836,7 +882,6 @@ def run_case(
     skill: Path,
     case: dict[str, Any],
     coverage: dict[tuple[Path, Path], set[int]],
-    absence_coverage: dict[tuple[Path, str], set[str]],
 ) -> list[str]:
     source_fixture = skill / case["fixture"]
     script = (skill / case["script"]).resolve()
@@ -877,6 +922,11 @@ def run_case(
                     f"{prepared.returncode}: {details}",
                 ]
         command = render_command(case["command"], script, fixture)
+        declared_absence = case.get("_absent_inputs", {})
+        present = [path for path in declared_absence if os.path.lexists(fixture / path)]
+        if present:
+            return [f"объявленный отсутствующим путь {path} существует после подготовки фикстуры"
+                    for path in sorted(present)]
         try:
             result = subprocess.run(
                 command,
@@ -923,14 +973,12 @@ def run_case(
             if value not in result.stderr:
                 errors.append(f"stderr не содержит {value!r}")
         errors.extend(verify_output(case, fixture))
+        observed = observed_conditional_inputs(trace_log)
+        for path in sorted(set(declared_absence) - observed):
+            errors.append(f"объявленный отсутствующим путь {path} не проверен командой")
         if expected_exit_code == 0:
-            observed = observed_conditional_inputs(trace_log)
-            if not errors:
-                for operation_id in case.get("_operation_absent_inputs", {}):
-                    absence_coverage.setdefault((skill, operation_id), set()).update(observed)
             for operation_id, declared_values in case.get("_operation_inputs", {}).items():
-                declared_absent = case.get("_operation_absent_inputs", {}).get(operation_id, [])
-                undeclared = sorted(observed - set(declared_values) - set(declared_absent))
+                undeclared = sorted(observed - set(declared_values) - set(declared_absence))
                 for path in undeclared:
                     errors.append(
                         f"операция {operation_id!r} проверяет отсутствующий путь "
@@ -955,8 +1003,6 @@ def main() -> int:
     run_errors: list[str] = []
     count = 0
     coverage: dict[tuple[Path, Path], set[int]] = {}
-    absence_coverage: dict[tuple[Path, str], set[str]] = {}
-    skipped_operations: set[tuple[Path, str]] = set()
     # Сценарий с объявленной внешней командой не проверяет поведение скрипта в
     # среде без неё. Такая среда — не нарушение контракта, поэтому сценарий
     # пропускается, а неполнота покрытия называется явно.
@@ -970,28 +1016,13 @@ def main() -> int:
                     f"{skill}::{case['id']}: сценарий пропущен, в этой среде нет "
                     f"внешних команд: {', '.join(absent)}",
                 )
-                skipped_operations.update((skill, operation_id) for operation_id in case.get("covers", []))
                 script_rel = safe_relative(case.get("script"))
                 if script_rel is not None:
                     incomplete.add((skill, script_rel))
                 continue
             count += 1
-            for error in run_case(skill, case, coverage, absence_coverage):
+            for error in run_case(skill, case, coverage):
                 run_errors.append(f"{skill}::{case['id']}: {error}")
-    for skill, cases in cases_by_skill.items():
-        expected_absence: dict[str, set[str]] = {}
-        for case in cases:
-            for operation_id, paths in case.get("_operation_absent_inputs", {}).items():
-                expected_absence.setdefault(operation_id, set()).update(paths)
-        for operation_id, paths in expected_absence.items():
-            if (skill, operation_id) in skipped_operations:
-                continue
-            observed = absence_coverage.get((skill, operation_id), set())
-            for path in sorted(paths - observed):
-                run_errors.append(
-                    f"{skill}: операция {operation_id!r}: отсутствие {path} из absent_inputs "
-                    "не подтверждено успешным сценарием"
-                )
     for message in skipped:
         print(message)
     checked_allowances: set[tuple[Path, Path]] = set()
