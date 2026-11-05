@@ -35,7 +35,15 @@ scripts:
     tools/test-corpus-operations.py; python3 tools/test-corpus-audit-regressions.py;
     python3 tools/test-corpus-statements.py;
     python3 tools/test-transcription-contract.py; python3
-    tools/test-knowledge-evaluation.py; python3 tools/test-script-utf8.py; python3
+    tools/test-knowledge-evaluation.py; python3 tools/test-corpus-search.py; python3 tools/test-e5-adapter.py;
+    if test -f .agents/skills/ai-setup-apm/scripts/eval-tools/run-skill-script-contract-tests.py;
+    then python3 .agents/skills/ai-setup-apm/scripts/eval-tools/run-skill-script-contract-tests.py
+    .apm/skills/kc-search;
+    elif test -f .claude/skills/ai-setup-apm/scripts/eval-tools/run-skill-script-contract-tests.py;
+    then python3 .claude/skills/ai-setup-apm/scripts/eval-tools/run-skill-script-contract-tests.py
+    .apm/skills/kc-search;
+    else echo "Контрактные проверки поиска пропущены — зависимости APM не установлены."; fi;
+    python3 tools/test-script-utf8.py; python3
     tools/test-pyyaml-dependencies.py; python3
     tools/test-run-execution-class.py; python3 tools/test-apm-audit-ci.py'
   evals: python3 tools/run-skill-evals.py "${APM_EVAL_PATH:-.apm/skills}"
