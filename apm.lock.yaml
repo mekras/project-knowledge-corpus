@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-11-05T17:44:01.866209+00:00'
+generated_at: '2026-11-05T18:10:37.981756+00:00'
 apm_version: 0.33.0
 dependencies:
 - repo_url: mekras/apm-marketplace
@@ -2805,7 +2805,7 @@ dependencies:
     .agents/skills/kc-retrieval-evaluation/assets/evaluation-config.yml.sample: sha256:8cc0a7509352dce6a760eaea4b1c0abc0063a28de6b982ad3422f638a4433ed8
     .agents/skills/kc-retrieval-evaluation/assets/evaluation-suite.yml: sha256:755456be367aec4b5ac6220f0a338117ed24005d07bc35492e89ec3b032be588
     .agents/skills/kc-retrieval-evaluation/evals/result-scenarios.json: sha256:932b50e7950b3099ec52dee005fdb0828b9d6d940056798a7cdddb241323d202
-    .agents/skills/kc-retrieval-evaluation/evals/script-contract-tests.json: sha256:5bbc3f41d9f1035d97769b8a8030867ed4b275036eed34b905972998fe561d99
+    .agents/skills/kc-retrieval-evaluation/evals/script-contract-tests.json: sha256:34f04234eb248335f68082d31cf082ca6a6af5bd3b012482176efd5927e8d27d
     .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/corpus/data/release.md: sha256:86adbcf9420dd6ce8c8a14a8ce04bcbbc758e9d7199c7b17ab2a2134ecf13f88
     .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/corpus/data/release.md: sha256:a303ba02fb89e3d1d87cd3c60415b29c498e90f7e325d399175b68fb2d8bc31f
     .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/corpus/data/release/statements.yml: sha256:f2906d14eb67e4145a214dbe31c59759501886d39a59d825756f73304a4b8267
@@ -2968,7 +2968,7 @@ dependencies:
     .claude/skills/kc-retrieval-evaluation/assets/evaluation-config.yml.sample: sha256:8cc0a7509352dce6a760eaea4b1c0abc0063a28de6b982ad3422f638a4433ed8
     .claude/skills/kc-retrieval-evaluation/assets/evaluation-suite.yml: sha256:755456be367aec4b5ac6220f0a338117ed24005d07bc35492e89ec3b032be588
     .claude/skills/kc-retrieval-evaluation/evals/result-scenarios.json: sha256:932b50e7950b3099ec52dee005fdb0828b9d6d940056798a7cdddb241323d202
-    .claude/skills/kc-retrieval-evaluation/evals/script-contract-tests.json: sha256:5bbc3f41d9f1035d97769b8a8030867ed4b275036eed34b905972998fe561d99
+    .claude/skills/kc-retrieval-evaluation/evals/script-contract-tests.json: sha256:34f04234eb248335f68082d31cf082ca6a6af5bd3b012482176efd5927e8d27d
     .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/corpus/data/release.md: sha256:86adbcf9420dd6ce8c8a14a8ce04bcbbc758e9d7199c7b17ab2a2134ecf13f88
     .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/corpus/data/release.md: sha256:a303ba02fb89e3d1d87cd3c60415b29c498e90f7e325d399175b68fb2d8bc31f
     .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/corpus/data/release/statements.yml: sha256:f2906d14eb67e4145a214dbe31c59759501886d39a59d825756f73304a4b8267
@@ -9540,7 +9540,7 @@ deployments:
   - mekras/apm-marketplace/packages/project-knowledge-corpus
   - .
   active_owner: mekras/apm-marketplace/packages/project-knowledge-corpus
-  content_hash: sha256:5bbc3f41d9f1035d97769b8a8030867ed4b275036eed34b905972998fe561d99
+  content_hash: sha256:34f04234eb248335f68082d31cf082ca6a6af5bd3b012482176efd5927e8d27d
 - kind: project-relative
   target: claude
   value: .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/corpus/data/release.md
@@ -9562,7 +9562,25 @@ deployments:
   content_hash: sha256:3428890c278911900e928c571d16ebe2b93cc43eec01d3eb881b7b236f872edb
 - kind: project-relative
   target: claude
+  value: .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/suite.yml
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:3428890c278911900e928c571d16ebe2b93cc43eec01d3eb881b7b236f872edb
+- kind: project-relative
+  target: claude
   value: .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/config.local.yml
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:b49e753498201583b4f2b76e27bd0d4b7746387d0c514ee6084ba289cf9a4362
+- kind: project-relative
+  target: claude
+  value: .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/config.yml
   runtime: null
   scope: project
   owners:
@@ -9600,6 +9618,15 @@ deployments:
   content_hash: sha256:06fa6400a50184281c6089c46b3fa0375fbb25ac72f32108ae153102f9bdbe69
 - kind: project-relative
   target: claude
+  value: .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/suite.yml
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:06fa6400a50184281c6089c46b3fa0375fbb25ac72f32108ae153102f9bdbe69
+- kind: project-relative
+  target: claude
   value: .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/adapter.py
   runtime: null
   scope: project
@@ -9611,6 +9638,15 @@ deployments:
 - kind: project-relative
   target: claude
   value: .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/config.local.yml
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:fe48dbca07dbdc10df8d6b4da8301568018c03f33484f9d63715f529a55312a5
+- kind: project-relative
+  target: claude
+  value: .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/config.yml
   runtime: null
   scope: project
   owners:
@@ -9640,6 +9676,15 @@ deployments:
 - kind: project-relative
   target: claude
   value: .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/suite.local.yml
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:5ed1e542460e53e03147f5c00556280353f2fe3badc29ef407644a3dbefa66af
+- kind: project-relative
+  target: claude
+  value: .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/suite.yml
   runtime: null
   scope: project
   owners:
@@ -17196,7 +17241,7 @@ deployments:
   - mekras/apm-marketplace/packages/project-knowledge-corpus
   - .
   active_owner: mekras/apm-marketplace/packages/project-knowledge-corpus
-  content_hash: sha256:5bbc3f41d9f1035d97769b8a8030867ed4b275036eed34b905972998fe561d99
+  content_hash: sha256:34f04234eb248335f68082d31cf082ca6a6af5bd3b012482176efd5927e8d27d
 - kind: project-relative
   target: codex
   value: .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/corpus/data/release.md
@@ -18290,7 +18335,25 @@ deployments:
   content_hash: sha256:3428890c278911900e928c571d16ebe2b93cc43eec01d3eb881b7b236f872edb
 - kind: project-relative
   target: legacy
+  value: .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/suite.yml
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:3428890c278911900e928c571d16ebe2b93cc43eec01d3eb881b7b236f872edb
+- kind: project-relative
+  target: legacy
   value: .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/config.local.yml
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:b49e753498201583b4f2b76e27bd0d4b7746387d0c514ee6084ba289cf9a4362
+- kind: project-relative
+  target: legacy
+  value: .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/config.yml
   runtime: null
   scope: project
   owners:
@@ -18308,6 +18371,15 @@ deployments:
   content_hash: sha256:06fa6400a50184281c6089c46b3fa0375fbb25ac72f32108ae153102f9bdbe69
 - kind: project-relative
   target: legacy
+  value: .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/suite.yml
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:06fa6400a50184281c6089c46b3fa0375fbb25ac72f32108ae153102f9bdbe69
+- kind: project-relative
+  target: legacy
   value: .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/config.local.yml
   runtime: null
   scope: project
@@ -18317,7 +18389,25 @@ deployments:
   content_hash: sha256:fe48dbca07dbdc10df8d6b4da8301568018c03f33484f9d63715f529a55312a5
 - kind: project-relative
   target: legacy
+  value: .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/config.yml
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:fe48dbca07dbdc10df8d6b4da8301568018c03f33484f9d63715f529a55312a5
+- kind: project-relative
+  target: legacy
   value: .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/suite.local.yml
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:5ed1e542460e53e03147f5c00556280353f2fe3badc29ef407644a3dbefa66af
+- kind: project-relative
+  target: legacy
+  value: .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/suite.yml
   runtime: null
   scope: project
   owners:
@@ -18895,15 +18985,20 @@ local_deployed_files:
 - .agents/skills/kc-retrieval-evaluation/evals/script-contract-tests.json
 - .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/corpus/data/release.md
 - .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/suite.local.yml
+- .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/suite.yml
 - .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/config.local.yml
+- .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/config.yml
 - .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/corpus/data/release.md
 - .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/corpus/data/release/statements.yml
 - .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/suite.local.yml
+- .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/suite.yml
 - .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/adapter.py
 - .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/config.local.yml
+- .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/config.yml
 - .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/corpus/data/release.md
 - .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/corpus/data/release/statements.yml
 - .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/suite.local.yml
+- .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/suite.yml
 - .agents/skills/kc-retrieval-evaluation/evals/triggers.json
 - .agents/skills/kc-retrieval-evaluation/references/dependency-exceptions.json
 - .agents/skills/kc-retrieval-evaluation/references/evaluation-protocol.md
@@ -19133,15 +19228,20 @@ local_deployed_files:
 - .claude/skills/kc-retrieval-evaluation/evals/script-contract-tests.json
 - .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/corpus/data/release.md
 - .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/suite.local.yml
+- .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/suite.yml
 - .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/config.local.yml
+- .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/config.yml
 - .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/corpus/data/release.md
 - .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/corpus/data/release/statements.yml
 - .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/suite.local.yml
+- .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/suite.yml
 - .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/adapter.py
 - .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/config.local.yml
+- .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/config.yml
 - .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/corpus/data/release.md
 - .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/corpus/data/release/statements.yml
 - .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/suite.local.yml
+- .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/suite.yml
 - .claude/skills/kc-retrieval-evaluation/evals/triggers.json
 - .claude/skills/kc-retrieval-evaluation/references/dependency-exceptions.json
 - .claude/skills/kc-retrieval-evaluation/references/evaluation-protocol.md
@@ -19362,18 +19462,23 @@ local_deployed_file_hashes:
   .agents/skills/kc-retrieval-evaluation/assets/evaluation-config.yml.sample: sha256:8cc0a7509352dce6a760eaea4b1c0abc0063a28de6b982ad3422f638a4433ed8
   .agents/skills/kc-retrieval-evaluation/assets/evaluation-suite.yml: sha256:755456be367aec4b5ac6220f0a338117ed24005d07bc35492e89ec3b032be588
   .agents/skills/kc-retrieval-evaluation/evals/result-scenarios.json: sha256:932b50e7950b3099ec52dee005fdb0828b9d6d940056798a7cdddb241323d202
-  .agents/skills/kc-retrieval-evaluation/evals/script-contract-tests.json: sha256:5bbc3f41d9f1035d97769b8a8030867ed4b275036eed34b905972998fe561d99
+  .agents/skills/kc-retrieval-evaluation/evals/script-contract-tests.json: sha256:34f04234eb248335f68082d31cf082ca6a6af5bd3b012482176efd5927e8d27d
   .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/corpus/data/release.md: sha256:86adbcf9420dd6ce8c8a14a8ce04bcbbc758e9d7199c7b17ab2a2134ecf13f88
   .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/suite.local.yml: sha256:3428890c278911900e928c571d16ebe2b93cc43eec01d3eb881b7b236f872edb
+  .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/suite.yml: sha256:3428890c278911900e928c571d16ebe2b93cc43eec01d3eb881b7b236f872edb
   .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/config.local.yml: sha256:b49e753498201583b4f2b76e27bd0d4b7746387d0c514ee6084ba289cf9a4362
+  .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/config.yml: sha256:b49e753498201583b4f2b76e27bd0d4b7746387d0c514ee6084ba289cf9a4362
   .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/corpus/data/release.md: sha256:a303ba02fb89e3d1d87cd3c60415b29c498e90f7e325d399175b68fb2d8bc31f
   .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/corpus/data/release/statements.yml: sha256:f2906d14eb67e4145a214dbe31c59759501886d39a59d825756f73304a4b8267
   .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/suite.local.yml: sha256:06fa6400a50184281c6089c46b3fa0375fbb25ac72f32108ae153102f9bdbe69
+  .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/suite.yml: sha256:06fa6400a50184281c6089c46b3fa0375fbb25ac72f32108ae153102f9bdbe69
   .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/adapter.py: sha256:ca7e9d355888bcf3876d92a5eea5473c39a74b5474300c6a115ba5865488bf95
   .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/config.local.yml: sha256:fe48dbca07dbdc10df8d6b4da8301568018c03f33484f9d63715f529a55312a5
+  .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/config.yml: sha256:fe48dbca07dbdc10df8d6b4da8301568018c03f33484f9d63715f529a55312a5
   .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/corpus/data/release.md: sha256:a303ba02fb89e3d1d87cd3c60415b29c498e90f7e325d399175b68fb2d8bc31f
   .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/corpus/data/release/statements.yml: sha256:f2906d14eb67e4145a214dbe31c59759501886d39a59d825756f73304a4b8267
   .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/suite.local.yml: sha256:5ed1e542460e53e03147f5c00556280353f2fe3badc29ef407644a3dbefa66af
+  .agents/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/suite.yml: sha256:5ed1e542460e53e03147f5c00556280353f2fe3badc29ef407644a3dbefa66af
   .agents/skills/kc-retrieval-evaluation/evals/triggers.json: sha256:022cbbcf2c5a239247476d5243f66361059595b20ebb483912bb93d4f01c4d49
   .agents/skills/kc-retrieval-evaluation/references/dependency-exceptions.json: sha256:f450d766beb5e8d3df05deaeea0e0f107dca3a18a8cdec4ccdb0f0cb7856753a
   .agents/skills/kc-retrieval-evaluation/references/evaluation-protocol.md: sha256:504b14d1a836b8535c7854223cefcf128557ddc7e0b2733672182abbf201ff49
@@ -19585,18 +19690,23 @@ local_deployed_file_hashes:
   .claude/skills/kc-retrieval-evaluation/assets/evaluation-config.yml.sample: sha256:8cc0a7509352dce6a760eaea4b1c0abc0063a28de6b982ad3422f638a4433ed8
   .claude/skills/kc-retrieval-evaluation/assets/evaluation-suite.yml: sha256:755456be367aec4b5ac6220f0a338117ed24005d07bc35492e89ec3b032be588
   .claude/skills/kc-retrieval-evaluation/evals/result-scenarios.json: sha256:932b50e7950b3099ec52dee005fdb0828b9d6d940056798a7cdddb241323d202
-  .claude/skills/kc-retrieval-evaluation/evals/script-contract-tests.json: sha256:5bbc3f41d9f1035d97769b8a8030867ed4b275036eed34b905972998fe561d99
+  .claude/skills/kc-retrieval-evaluation/evals/script-contract-tests.json: sha256:34f04234eb248335f68082d31cf082ca6a6af5bd3b012482176efd5927e8d27d
   .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/corpus/data/release.md: sha256:86adbcf9420dd6ce8c8a14a8ce04bcbbc758e9d7199c7b17ab2a2134ecf13f88
   .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/suite.local.yml: sha256:3428890c278911900e928c571d16ebe2b93cc43eec01d3eb881b7b236f872edb
+  .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/invalid/suite.yml: sha256:3428890c278911900e928c571d16ebe2b93cc43eec01d3eb881b7b236f872edb
   .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/config.local.yml: sha256:b49e753498201583b4f2b76e27bd0d4b7746387d0c514ee6084ba289cf9a4362
+  .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/config.yml: sha256:b49e753498201583b4f2b76e27bd0d4b7746387d0c514ee6084ba289cf9a4362
   .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/corpus/data/release.md: sha256:a303ba02fb89e3d1d87cd3c60415b29c498e90f7e325d399175b68fb2d8bc31f
   .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/corpus/data/release/statements.yml: sha256:f2906d14eb67e4145a214dbe31c59759501886d39a59d825756f73304a4b8267
   .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/suite.local.yml: sha256:06fa6400a50184281c6089c46b3fa0375fbb25ac72f32108ae153102f9bdbe69
+  .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/missing-automation/suite.yml: sha256:06fa6400a50184281c6089c46b3fa0375fbb25ac72f32108ae153102f9bdbe69
   .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/adapter.py: sha256:ca7e9d355888bcf3876d92a5eea5473c39a74b5474300c6a115ba5865488bf95
   .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/config.local.yml: sha256:fe48dbca07dbdc10df8d6b4da8301568018c03f33484f9d63715f529a55312a5
+  .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/config.yml: sha256:fe48dbca07dbdc10df8d6b4da8301568018c03f33484f9d63715f529a55312a5
   .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/corpus/data/release.md: sha256:a303ba02fb89e3d1d87cd3c60415b29c498e90f7e325d399175b68fb2d8bc31f
   .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/corpus/data/release/statements.yml: sha256:f2906d14eb67e4145a214dbe31c59759501886d39a59d825756f73304a4b8267
   .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/suite.local.yml: sha256:5ed1e542460e53e03147f5c00556280353f2fe3badc29ef407644a3dbefa66af
+  .claude/skills/kc-retrieval-evaluation/evals/script-fixtures/ready/suite.yml: sha256:5ed1e542460e53e03147f5c00556280353f2fe3badc29ef407644a3dbefa66af
   .claude/skills/kc-retrieval-evaluation/evals/triggers.json: sha256:022cbbcf2c5a239247476d5243f66361059595b20ebb483912bb93d4f01c4d49
   .claude/skills/kc-retrieval-evaluation/references/dependency-exceptions.json: sha256:f450d766beb5e8d3df05deaeea0e0f107dca3a18a8cdec4ccdb0f0cb7856753a
   .claude/skills/kc-retrieval-evaluation/references/evaluation-protocol.md: sha256:504b14d1a836b8535c7854223cefcf128557ddc7e0b2733672182abbf201ff49
