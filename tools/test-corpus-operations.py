@@ -2042,6 +2042,50 @@ def main() -> int:
     return 0
 
 
+def test_empty_setup_resumes_with_real_validation() -> None:
+    """Fresh processes resume an empty corpus without inventing future executors."""
+    import shutil
+    import yaml
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        fixture = REPO_ROOT / ".apm/skills/kc-inventory/evals/script-fixtures/layout-valid/knowledge"
+        shutil.copytree(fixture, root / "knowledge")
+        shutil.rmtree(root / "knowledge/data")
+        (root / "knowledge/data").mkdir()
+        write(root / "knowledge/catalog.yml", "sources: []\n")
+        starter = REPO_ROOT / ".apm/skills/kc-pipeline/assets/operations.yml"
+        operations = yaml.safe_load(starter.read_text(encoding="utf-8"))
+        assert operations["stages"] == {} and operations["adapters"] == {}
+        operations["stages"]["corpus_validation"] = {"commands": [{
+            "id": "real-layout-validation",
+            "argv": [sys.executable, str(VALIDATOR), "knowledge"],
+            "working_directory": ".", "write_paths": ["knowledge"], "required": True,
+        }]}
+        write(root / "operations.yml", yaml.safe_dump(operations))
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        run(root, "--run-pipeline", expected=12)
+        state_path = root / ".local/state/corpus-pipeline.json"
+        initial = json.loads(state_path.read_text(encoding="utf-8"))
+        assert initial["status"] == "awaiting_agent_task"
+        assert all(not initial["queues"][q] for q in ("fetch", "transcribe", "normalize"))
+        write(root / ".local/empty-evidence.md", "No sources, concepts, impact or product changes.\n")
+        # Each CLI invocation is a new process, reading only persisted state.
+        for stage in ("concepts", "impact_audit", "apply_changes"):
+            run(root, "--complete-global-stage", stage, "--evidence", ".local/empty-evidence.md")
+            current = json.loads(state_path.read_text(encoding="utf-8"))
+            assert current["run_id"] == initial["run_id"]
+        run(root, "--run-pipeline")
+        final = json.loads(state_path.read_text(encoding="utf-8"))
+        assert final["status"] == "completed" and final["reason_code"] == "all_queues_empty"
+        assert final["run_id"] == initial["run_id"]
+        assert set(final["completed_global_stages"]) == {"concepts", "impact_audit", "apply_changes", "corpus_validation"}
+        # Read-only inspection in a later process preserves completed state.
+        run(root)
+        assert json.loads(state_path.read_text(encoding="utf-8")) == final
+
+
 def test_captured_snapshot_still_needs_processing() -> None:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
@@ -2066,5 +2110,6 @@ def test_captured_snapshot_still_needs_processing() -> None:
 
 
 if __name__ == "__main__":
+    test_empty_setup_resumes_with_real_validation()
     test_captured_snapshot_still_needs_processing()
     raise SystemExit(main())
