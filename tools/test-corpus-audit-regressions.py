@@ -8,6 +8,7 @@ import importlib.machinery
 import json
 import base64
 import subprocess
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -623,7 +624,184 @@ def test_agent_template_matches_validator_and_controller() -> None:
             raise AssertionError("filled agent template failed controller route validation")
 
 
+def test_external_observation_survives_empty_index_and_resume() -> None:
+    """Exercise the public CLI: 9 -> 73 units, three changed bases, then removal."""
+    controller = load_controller()
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        BASE.build_corpus(root)
+        BASE.reject_automated_work(root, keep_blocked=False)
+        source_path = root / "knowledge/data/test/source.yml"
+        source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+        source.update({"adapter": "agent", "storage_strategy": "external_reference",
+                       "processing_scope": "metadata_only", "copy_policy": "no_bulk_copy",
+                       "agent_route": {"mode": "agent", "allowed_operations": ["index"],
+                                       "instructions": "Inspect navigation and file fingerprints only.",
+                                       "write_scope": ["knowledge/data/test"]}})
+        source_path.write_text(yaml.safe_dump(source), encoding="utf-8")
+        shutil.rmtree(root / "knowledge/data/test/documents")
+        BASE.write(root / "knowledge/data/test/items.yml", "items: []\n")
+        BASE.write(root / "product.txt", "pinned lesson")
+        configure_report(root, [], mode="propose_only")
+        BASE.remove_stage_commands(root, "impact_audit")
+        git_init(root)
+        evidence_path = root / ".local/index-evidence.yml"
+        report_path = root / ".local/reports/impact-findings.yml"
+        args = ("--run-pipeline", "--agent-index-evidence", "TEST", ".local/index-evidence.yml")
+        close = ("--complete-global-stage", "impact_audit", "--evidence", ".local/reports/impact-findings.yml")
+
+        def observation(size: int) -> dict:
+            return {"scope": "card-navigation-v1", "complete": True,
+                    "evidence": ["provider navigation and associated asset fingerprints"],
+                    "units": {f"CARD-{i}": {"locator": f"provider/cards/{i}", "fingerprint": digest([i, "text", "image"])}
+                              for i in range(size)}}
+
+        def witness(observed: dict, version: int = 2) -> None:
+            current = state(root)
+            sync = current["index_sync"]
+            manifest = controller.scoped_file_manifest(root, ["knowledge/data/test"])
+            previous = sync.get("baseline_observations", {}).get("TEST", {}).get("units", {})
+            data = {"contract_version": version, "run_id": current["run_id"], "source_id": "TEST",
+                    "source_locator": source["locator"], "operation": "index",
+                    "allowed_write_scope": ["knowledge/data/test"], "checked_paths": list(manifest),
+                    "changed_paths": [], "before": {"snapshot_hash": digest(sync["baseline"]["TEST"]), "paths": manifest},
+                    "after": {"snapshot_hash": digest({}), "paths": manifest},
+                    "result": "changed" if version == 2 and previous != observed["units"] else "no_change"}
+            if version == 2:
+                data["observation"] = observed
+            evidence_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+        def findings(ids: list[str], categories: list[str], *, proposal: bool = False) -> None:
+            finding = {"id": "source-review", "source": "TEST", "status": "no_change",
+                       "basis": "Compared the declared provider units and pinned lesson bases.",
+                       "affected_surfaces": ["user_documentation"], "reason": "Existing lesson deliberately pins its selected units.",
+                       "source_delta": {"source_id": "TEST", "unit_ids": ids, "categories": categories}}
+            if proposal:
+                finding.update({"status": "apply_now", "target_paths": ["product.txt"],
+                                "expected_result": "Review the expanded lesson.", "recommended_change": "Update lesson selection."})
+            report_path.write_text(yaml.safe_dump({"findings": [finding]}), encoding="utf-8")
+
+        first = run(root, "--run-pipeline", expected=1)
+        assert state(root).get("index_sync") is not None, first.stdout + first.stderr
+        witness(observation(9), version=1)
+        assert "observation" in run(root, *args, expected=1).stdout
+        incomplete = observation(9)
+        incomplete["complete"] = False
+        witness(incomplete)
+        run(root, *args, expected=1)
+        witness(observation(9))
+        run(root, *args, expected=12)
+        # A successful command must satisfy the same coverage gate as manual closure.
+        operations_path = root / "operations.yml"
+        operations = yaml.safe_load(operations_path.read_text(encoding="utf-8"))
+        operations["stages"]["impact_audit"] = {"commands": [{"id": "empty-review", "argv": [sys.executable, "-c", "pass"],
+                                                                 "working_directory": ".", "write_paths": [".local"], "required": True}]}
+        operations_path.write_text(yaml.safe_dump(operations), encoding="utf-8")
+        failed = run(root, *args, expected=1)
+        assert "не покрывает" in state(root)["message"], failed.stdout + failed.stderr
+        assert state(root)["status"] == "failed"
+        BASE.remove_stage_commands(root, "impact_audit")
+        run(root, *args, expected=12)
+        assert "не покрывает" in run(root, *close, expected=2).stderr
+        findings([f"CARD-{i}" for i in range(9)], ["added"])
+        run(root, *close)
+        run(root, *args)
+        assert state(root)["status"] == "completed"
+
+        # Start a new pass. Changes include image bytes while the local index is still empty.
+        run(root, "--run-pipeline", expected=1)
+        observed = observation(73)
+        for i in range(3):
+            observed["units"][f"CARD-{i}"]["fingerprint"] = digest([i, "changed image"])
+        witness(observed)
+        run(root, *args, expected=12)
+        delta = next(d for d in state(root)["index_sync"]["delta"]["sources"] if d["source_id"] == "TEST")
+        assert len(delta["added"]) == 64 and len(delta["changed"]) == 3
+        run(root, *args, expected=12)
+        repeated = next(d for d in state(root)["index_sync"]["delta"]["sources"] if d["source_id"] == "TEST")
+        assert repeated == delta, "Resuming must not consume the unaudited delta."
+        findings(delta["added"], ["added"], proposal=True)
+        run(root, *close, expected=2)  # The changed existing bases still have no outcome.
+        findings(delta["added"] + delta["changed"], ["added", "changed"], proposal=True)
+        bad = yaml.safe_load(report_path.read_text(encoding="utf-8"))
+        bad["findings"][0]["source"] = "OTHER"
+        report_path.write_text(yaml.safe_dump(bad), encoding="utf-8")
+        assert "не совпадает" in run(root, *close, expected=2).stderr
+        findings(delta["added"] + delta["changed"], ["added", "changed"], proposal=True)
+        run(root, *close)
+        # Changing the report after closure reopens only impact and subsequent stages.
+        report_path.write_text(report_path.read_text(encoding="utf-8") + "\n# amended review\n", encoding="utf-8")
+        run(root, *args, expected=12)
+        assert "impact_audit" not in state(root)["completed_global_stages"]
+        assert "concepts" in state(root)["completed_global_stages"]
+        run(root, *close)
+        run(root, *args)
+        assert len(state(root)["owner_summary"]["proposed_changes"]) == 1
+        assert (root / "product.txt").read_text(encoding="utf-8") == "pinned lesson"
+        assert yaml.safe_load((root / "knowledge/data/test/items.yml").read_text()) == {"items": []}
+
+        # Proven absence of changes completes without manufacturing findings.
+        run(root, "--run-pipeline", expected=1)
+        witness(observed)
+        report_path.write_text("findings: []\n", encoding="utf-8")
+        run(root, *args, expected=12)
+        run(root, *close)
+        run(root, *args)
+
+        # A removed unit is checked against its previous basis, not a missing current row.
+        run(root, "--run-pipeline", expected=1)
+        observed["units"].pop("CARD-0")
+        witness(observed)
+        run(root, *args, expected=12)
+        findings(["CARD-0"], ["removed"])
+        run(root, *close)
+        run(root, *args)
+
+        # Registered adapters use the same observation contract, without agent flags.
+        source["adapter"] = "provider"
+        source.pop("agent_route")
+        source_path.write_text(yaml.safe_dump(source), encoding="utf-8")
+        BASE.write(root / ".local/observation.json", json.dumps(observed))
+        BASE.write(root / "provider.py", '''
+            import json, sys
+            from pathlib import Path
+            op = sys.argv[1]
+            result = {"contract_version": 2, "operation": op, "source_id": "TEST", "adapter": "provider",
+                      "status": "ready" if op == "probe" else "unchanged", "message": "Provider inspected.", "artifacts": []}
+            if op == "index":
+                result["observation"] = json.loads(Path(".local/observation.json").read_text())
+            print(json.dumps(result))
+        ''')
+        operations = yaml.safe_load(operations_path.read_text(encoding="utf-8"))
+        operations["adapters"]["provider"] = {"contract_version": 2, "operations": {
+            op: {"argv": [sys.executable, "provider.py", op], "working_directory": ".",
+                 "write_paths": [] if op == "probe" else ["knowledge/data/test"]}
+            for op in ("probe", "index")}}
+        operations_path.write_text(yaml.safe_dump(operations), encoding="utf-8")
+        report_path.write_text("findings: []\n", encoding="utf-8")
+        run(root, "--run-pipeline", expected=12)
+        run(root, *close)
+        run(root, "--run-pipeline")
+        assert state(root)["index_sync"]["observations"]["TEST"]["units"] == observed["units"]
+
+        # A genuinely empty observed source is valid, including on a later unchanged pass.
+        removed = list(observed["units"])
+        observed["units"] = {}
+        BASE.write(root / ".local/observation.json", json.dumps(observed))
+        run(root, "--run-pipeline", expected=12)
+        findings(removed, ["removed"])
+        run(root, *close)
+        run(root, "--run-pipeline")
+        report_path.write_text("findings: []\n", encoding="utf-8")
+        run(root, "--run-pipeline", expected=12)
+        run(root, *close)
+        run(root, "--run-pipeline")
+        empty_delta = next(d for d in state(root)["index_sync"]["delta"]["sources"] if d["source_id"] == "TEST")
+        assert all(count == 0 for count in empty_delta["counts"].values())
+
+
 def main() -> int:
+    test_external_observation_survives_empty_index_and_resume()
     test_negative_selection_is_not_content()
     test_agent_evidence_contract()
     test_adapter_failure_keeps_last_success()
