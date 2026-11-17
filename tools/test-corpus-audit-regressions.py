@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.machinery
+import importlib.util
 import json
 import base64
 import subprocess
@@ -17,16 +17,23 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE_LOADER = importlib.machinery.SourceFileLoader(
-    "test_corpus_operations", str(ROOT / "tools" / "test-corpus-operations.py")
-)
-BASE = BASE_LOADER.load_module()
+
+
+def load_source(name: str, path: Path):
+    # SourceFileLoader.load_module() удалён в новых версиях Python.
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+BASE = load_source("test_corpus_operations", ROOT / "tools" / "test-corpus-operations.py")
 SCRIPT = ROOT / ".apm" / "skills" / "kc-pipeline" / "scripts" / "run-corpus-operations.py"
 
 
 def load_controller():
-    loader = importlib.machinery.SourceFileLoader("corpus_operations_audit", str(SCRIPT))
-    return loader.load_module()
+    return load_source("corpus_operations_audit", SCRIPT)
 
 
 def digest(value: object) -> str:
@@ -800,6 +807,87 @@ def test_external_observation_survives_empty_index_and_resume() -> None:
         assert all(count == 0 for count in empty_delta["counts"].values())
 
 
+def test_statement_coverage_requires_every_delta_statement() -> None:
+    """Each new or content-changed statement must be named by at least one finding."""
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        BASE.build_corpus(root)
+        BASE.reject_automated_work(root, keep_blocked=False)
+        configure_report(root, [], mode="propose_only")
+        BASE.remove_stage_commands(root, "impact_audit")
+        git_init(root)
+        report_path = root / ".local/reports/impact-findings.yml"
+        statements_path = root / "knowledge/data/test/documents/statements/statements.yml"
+        close = ("--complete-global-stage", "impact_audit", "--evidence", ".local/reports/impact-findings.yml")
+
+        def write_findings(findings: list[dict]) -> None:
+            report_path.write_text(yaml.safe_dump({"findings": findings}, allow_unicode=True), encoding="utf-8")
+
+        def no_change(finding_id: str, statements: list[str], reason: str) -> dict:
+            return {"id": finding_id, "status": "no_change", "source": "TEST",
+                    "basis": "Сообщение рабочего чата.", "affected_surfaces": ["user_documentation"],
+                    "reason": reason, "statements": statements,
+                    "source_delta": {"source_id": "TEST", "categories": ["unchanged"], "unit_ids": ["TEST-V2-COMPLETE"]}}
+
+        run(root, "--run-pipeline", expected=12)
+        baseline = state(root)["statement_baseline"]
+        # During the pass two chat messages became statements: a link to a new
+        # project resource that the project does not hold yet, and an empty reply.
+        data = yaml.safe_load(statements_path.read_text(encoding="utf-8"))
+        template = dict(data["statements"][0])
+        data["statements"].append({**template, "id": "TEST-003",
+                                   "text": "Создана группа репозиториев проекта: https://git.example.test/project.",
+                                   "excerpt": "Новая группа: https://git.example.test/project"})
+        data["statements"].append({**template, "id": "TEST-004", "text": "Участник ответил «ок».", "excerpt": "ок"})
+        statements_path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        run(root, "--run-pipeline", expected=12)
+        assert state(root)["statement_baseline"] == baseline, "Resuming must keep the statement baseline."
+
+        # A catch-all "the rest has no impact" without named statements does not close the stage.
+        write_findings([no_change("rest", [], "Остальная часть дельты не влияет на проект.")])
+        failed = run(root, *close, expected=2)
+        assert "не покрывает утверждения дельты: TEST-003, TEST-004" in failed.stderr, failed.stderr
+        assert "impact_audit" not in state(root)["completed_global_stages"]
+        # Covering only the link still leaves the empty reply unexplained.
+        link = apply_finding("new-resource-link")
+        link.update({"source_delta": {"source_id": "TEST", "categories": ["unchanged"], "unit_ids": ["TEST-V2-COMPLETE"]},
+                     "statements": ["TEST-003"],
+                     "expected_result": "Ссылка на группу репозиториев хранится в перечне ресурсов проекта.",
+                     "recommended_change": "Заменить заглушку «добавить ссылку» адресом группы."})
+        write_findings([link])
+        failed = run(root, *close, expected=2)
+        assert "утверждения дельты: TEST-004." in failed.stderr, failed.stderr
+        # A mistyped statement ID cannot stand in for coverage.
+        write_findings([link, no_change("empty-reply", ["TEST-404"], "Реплика без содержания.")])
+        assert "неизвестные утверждения: TEST-404" in run(root, *close, expected=2).stderr
+        write_findings([link, no_change("empty-reply", ["TEST-004"], "Реплика «ок» не содержит нового сведения.")])
+        run(root, *close)
+        run(root, "--run-pipeline")
+        summary = state(root)["owner_summary"]
+        assert summary["status"] == "completed", summary
+        assert [item["statements"] for item in summary["no_change_findings"]] == [["TEST-004"]]
+        assert [item["id"] for item in summary["proposed_changes"]] == ["new-resource-link"]
+        assert {entry["id"] for entry in summary["statement_entries"]} == {"TEST-003", "TEST-004"}
+
+        # Next pass: a processing-only change needs no new finding, a content change does.
+        run(root, "--run-pipeline", expected=12)
+        data = yaml.safe_load(statements_path.read_text(encoding="utf-8"))
+        by_id = {statement["id"]: statement for statement in data["statements"]}
+        by_id["TEST-003"]["checked_at"] = "2026-11-17"
+        statements_path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        write_findings([])
+        run(root, "--run-pipeline", expected=12)
+        by_id["TEST-004"]["text"] = "Участник уточнил: старая группа репозиториев закрыта."
+        statements_path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        run(root, "--run-pipeline", expected=12)
+        failed = run(root, *close, expected=2)
+        assert "утверждения дельты: TEST-004." in failed.stderr, failed.stderr
+        write_findings([no_change("old-group", ["TEST-004"], "Закрытая группа нигде в проекте не упоминается.")])
+        run(root, *close)
+        run(root, "--run-pipeline")
+        assert state(root)["status"] == "completed"
+
+
 def main() -> int:
     test_external_observation_survives_empty_index_and_resume()
     test_negative_selection_is_not_content()
@@ -813,6 +901,7 @@ def main() -> int:
     test_repeated_propose_only_is_unique()
     test_adversarial_eligibility_and_surface_contracts()
     test_agent_template_matches_validator_and_controller()
+    test_statement_coverage_requires_every_delta_statement()
     print("Аудиторские регрессионные сценарии прошли.")
     return 0
 
