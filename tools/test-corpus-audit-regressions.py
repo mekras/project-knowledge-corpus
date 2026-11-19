@@ -693,7 +693,10 @@ def test_external_observation_survives_empty_index_and_resume() -> None:
         assert state(root)["reason_code"] == "agent_index_evidence_required"
         witness(observation(9), version=1)
         # An external reference without observation stays unchecked; the pass goes on.
-        assert "observation" in run(root, *args, expected=12).stdout
+        # The refusal names the evidence version and the contract section the agent needs.
+        refused = run(root, *args, expected=12).stdout
+        assert "свидетельство агента версии 2" in refused, refused
+        assert "Наблюдение внешнего источника" in refused, refused
         assert [entry["source_id"] for entry in state(root)["index_sync"]["unchecked_sources"]] == ["TEST"]
         incomplete = observation(9)
         incomplete["complete"] = False
@@ -715,6 +718,22 @@ def test_external_observation_survives_empty_index_and_resume() -> None:
         BASE.remove_stage_commands(root, "impact_audit")
         run(root, *args, expected=12)
         assert "не покрывает" in run(root, *close, expected=2).stderr
+        # Only the configured report counts; a coverage refusal names a missing setting or file.
+        review_path = root / ".local/reports/impact-review.md"
+        review_path.write_text("Review stored outside the configured report.\n", encoding="utf-8")
+        close_elsewhere = ("--complete-global-stage", "impact_audit", "--evidence", ".local/reports/impact-review.md")
+        moved_report = report_path.with_suffix(".moved")
+        report_path.rename(moved_report)
+        missing_file = run(root, *close_elsewhere, expected=2).stderr
+        assert "Отчёт влияния не найден: .local/reports/impact-findings.yml" in missing_file, missing_file
+        moved_report.rename(report_path)
+        configured = yaml.safe_load(operations_path.read_text(encoding="utf-8"))
+        report_setting = configured.pop("impact_report")
+        operations_path.write_text(yaml.safe_dump(configured), encoding="utf-8")
+        missing_setting = run(root, *close_elsewhere, expected=2).stderr
+        assert "impact_report.path" in missing_setting, missing_setting
+        configured["impact_report"] = report_setting
+        operations_path.write_text(yaml.safe_dump(configured), encoding="utf-8")
         findings([f"CARD-{i}" for i in range(9)], ["added"])
         run(root, *close)
         run(root, *args)
