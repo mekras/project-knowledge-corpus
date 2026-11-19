@@ -212,8 +212,8 @@ def test_agent_evidence_contract() -> None:
         agent_route(root)
         BASE.reject_automated_work(root, keep_blocked=False)
         git_init(root)
-        failed = run(root, "--run-pipeline", "--agent-index-refreshed", "TEST-LONG", expected=1)
-        if "index_refresh_incomplete" not in failed.stdout:
+        run(root, "--run-pipeline", "--agent-index-refreshed", "TEST-LONG", expected=12)
+        if state(root)["reason_code"] != "agent_index_evidence_required":
             raise AssertionError("legacy agent flag closed the refresh")
 
     with tempfile.TemporaryDirectory() as temporary:
@@ -228,7 +228,7 @@ def test_agent_evidence_contract() -> None:
         agent_route(root)
         BASE.reject_automated_work(root, keep_blocked=False)
         git_init(root)
-        run(root, "--run-pipeline", expected=1)
+        run(root, "--run-pipeline", expected=12)
         saved = state(root)
         before = saved["index_sync"]["after"]["TEST-LONG"]
         items = root / "knowledge" / "data" / "test-long" / "items.yml"
@@ -276,7 +276,7 @@ def test_adapter_failure_keeps_last_success() -> None:
         )
         BASE.write(root / ".local" / "fail-index", "yes\n")
         subprocess.run(["git", "add", "-A"], cwd=root, check=True)
-        run(root, "--run-pipeline", expected=1)
+        run(root, "--run-pipeline", expected=21)
         failed = state(root)
         if not failed["index_sync"]["after"]:
             raise AssertionError("failed adapter erased confirmed after snapshot")
@@ -688,14 +688,19 @@ def test_external_observation_survives_empty_index_and_resume() -> None:
                                 "expected_result": "Review the expanded lesson.", "recommended_change": "Update lesson selection."})
             report_path.write_text(yaml.safe_dump({"findings": [finding]}), encoding="utf-8")
 
-        first = run(root, "--run-pipeline", expected=1)
+        first = run(root, "--run-pipeline", expected=12)
         assert state(root).get("index_sync") is not None, first.stdout + first.stderr
+        assert state(root)["reason_code"] == "agent_index_evidence_required"
         witness(observation(9), version=1)
-        assert "observation" in run(root, *args, expected=1).stdout
+        # An external reference without observation stays unchecked; the pass goes on.
+        assert "observation" in run(root, *args, expected=12).stdout
+        assert [entry["source_id"] for entry in state(root)["index_sync"]["unchecked_sources"]] == ["TEST"]
         incomplete = observation(9)
         incomplete["complete"] = False
         witness(incomplete)
-        run(root, *args, expected=1)
+        run(root, *args, expected=12)
+        partial = state(root)["index_sync"]["partial_sources"]
+        assert [entry["source_id"] for entry in partial] == ["TEST"], partial
         witness(observation(9))
         run(root, *args, expected=12)
         # A successful command must satisfy the same coverage gate as manual closure.
@@ -716,7 +721,7 @@ def test_external_observation_survives_empty_index_and_resume() -> None:
         assert state(root)["status"] == "completed"
 
         # Start a new pass. Changes include image bytes while the local index is still empty.
-        run(root, "--run-pipeline", expected=1)
+        run(root, "--run-pipeline", expected=12)
         observed = observation(73)
         for i in range(3):
             observed["units"][f"CARD-{i}"]["fingerprint"] = digest([i, "changed image"])
@@ -748,7 +753,7 @@ def test_external_observation_survives_empty_index_and_resume() -> None:
         assert yaml.safe_load((root / "knowledge/data/test/items.yml").read_text()) == {"items": []}
 
         # Proven absence of changes completes without manufacturing findings.
-        run(root, "--run-pipeline", expected=1)
+        run(root, "--run-pipeline", expected=12)
         witness(observed)
         report_path.write_text("findings: []\n", encoding="utf-8")
         run(root, *args, expected=12)
@@ -756,7 +761,7 @@ def test_external_observation_survives_empty_index_and_resume() -> None:
         run(root, *args)
 
         # A removed unit is checked against its previous basis, not a missing current row.
-        run(root, "--run-pipeline", expected=1)
+        run(root, "--run-pipeline", expected=12)
         observed["units"].pop("CARD-0")
         witness(observed)
         run(root, *args, expected=12)
@@ -805,6 +810,56 @@ def test_external_observation_survives_empty_index_and_resume() -> None:
         run(root, "--run-pipeline")
         empty_delta = next(d for d in state(root)["index_sync"]["delta"]["sources"] if d["source_id"] == "TEST")
         assert all(count == 0 for count in empty_delta["counts"].values())
+
+
+def test_agent_reports_unavailable_source() -> None:
+    """ФТ-016 и ФТ-022: недоступность подтверждают две разные попытки, проход идёт дальше."""
+    controller = load_controller()
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        BASE.build_corpus(root)
+        BASE.write_long_source(root, coverage_units="""
+            coverage:
+              units:
+                - unit_id: chapter-1
+                  status: extracted
+        """)
+        agent_route(root)
+        BASE.reject_automated_work(root, keep_blocked=False)
+        git_init(root)
+        run(root, "--run-pipeline", expected=12)
+        saved = state(root)
+        if saved["reason_code"] != "agent_index_evidence_required":
+            raise AssertionError("pipeline did not wait for the agent index evidence")
+        manifest = controller.scoped_file_manifest(root, ["knowledge/data/test-long"])
+        snapshot = saved["index_sync"]["baseline"]["TEST-LONG"]
+        evidence = root / ".local" / "unavailable.yml"
+        args = ("--run-pipeline", "--agent-index-evidence", "TEST-LONG", ".local/unavailable.yml")
+
+        def unavailable(attempts: list[str]) -> None:
+            evidence.write_text(yaml.safe_dump({
+                "contract_version": 1, "run_id": saved["run_id"], "source_id": "TEST-LONG",
+                "source_locator": "file:///tmp/test-long-source.txt", "operation": "index",
+                "result": "unavailable", "attempts": attempts,
+                "before": {"snapshot_hash": digest(snapshot), "paths": manifest},
+                "after": {"snapshot_hash": digest(snapshot), "paths": manifest},
+                "checked_paths": list(manifest), "changed_paths": [],
+                "allowed_write_scope": ["knowledge/data/test-long"],
+            }, allow_unicode=True), encoding="utf-8")
+
+        unavailable(["curl: домен не найден"])
+        run(root, *args, expected=21)
+        entry = state(root)["index_sync"]["unchecked_sources"][0]
+        if entry["kind"] != "failure" or "двух" not in entry["reason"]:
+            raise AssertionError("one failed attempt was accepted as source unavailability")
+        unavailable(["curl: домен не найден", "загрузчик страниц: тайм-аут"])
+        run(root, *args, expected=21)
+        current = state(root)
+        entry = current["index_sync"]["unchecked_sources"][0]
+        if current["status"] != "environment_limited" or entry["kind"] != "environment":
+            raise AssertionError("confirmed unavailability did not narrow the pass to the environment limit")
+        if (root / "knowledge" / "data" / "test-long" / "index-baseline.yml").exists():
+            raise AssertionError("unchecked source received a reviewed baseline")
 
 
 def test_statement_coverage_requires_every_delta_statement() -> None:
@@ -890,6 +945,7 @@ def test_statement_coverage_requires_every_delta_statement() -> None:
 
 def main() -> int:
     test_external_observation_survives_empty_index_and_resume()
+    test_agent_reports_unavailable_source()
     test_negative_selection_is_not_content()
     test_agent_evidence_contract()
     test_adapter_failure_keeps_last_success()

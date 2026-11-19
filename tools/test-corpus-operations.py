@@ -1354,13 +1354,20 @@ def main() -> int:
         add_no_progress_fetch_executor(root)
         subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
         subprocess.run(["git", "add", "-A"], cwd=root, check=True)
-        stalled = run(root, "--run-pipeline", expected=1)
+        # ADR-0015: очередь без продвижения откладывается, а проход идёт к следующей очереди.
+        stalled = run(root, "--run-pipeline", expected=12)
         state = json.loads(
             (root / ".local" / "state" / "corpus-pipeline.json").read_text(encoding="utf-8")
         )
-        if state["reason_code"] != "no_progress" or "не изменил машиночитаемую очередь" not in state["message"]:
+        deferred = [entry for entry in state["environment_deferred"] if entry["queue"] == "fetch"]
+        if (
+            not deferred
+            or any(entry["reason"] != "command_no_progress" or entry["scope"] != "queue" for entry in deferred)
+            or state["queues"]["fetch"]
+            or "не изменил машиночитаемую очередь" not in stalled.stdout
+        ):
             raise AssertionError(
-                "Исполнитель без прогресса текущей стадии не остановил проход.\n"
+                "Исполнитель без прогресса не отложил свою очередь.\n"
                 f"state={state}\nstdout={stalled.stdout}\nstderr={stalled.stderr}"
             )
 
@@ -2035,9 +2042,21 @@ def main() -> int:
         legacy = subprocess.run([sys.executable, str(VALIDATOR), "knowledge", "--output", "json"], cwd=root, capture_output=True, text=True, check=False)
         if legacy.returncode != 0 or "legacy adapter: manual" not in legacy.stdout:
             raise AssertionError("Старый adapter: manual не получил диагностируемое предупреждение.")
-        failed = run(root, "--run-pipeline", expected=1)
-        if "index_refresh_incomplete" not in failed.stdout:
-            raise AssertionError("manual без маршрута не удержал полный проход незавершённым.")
+        # ФТ-017, критерий 4: источник без проверки выпадает только из своей
+        # дельты, а остальные источники продолжают проход.
+        proceeded = run(root, "--run-pipeline", expected=12)
+        state = json.loads((root / ".local" / "state" / "corpus-pipeline.json").read_text(encoding="utf-8"))
+        if "index_refresh_incomplete" in proceeded.stdout or state["status"] == "failed":
+            raise AssertionError("Непроверенный источник снова остановил весь проход.")
+        unchecked = state["index_sync"]["unchecked_sources"]
+        if [entry["source_id"] for entry in unchecked] != ["TEST"] or unchecked[0]["kind"] != "configuration":
+            raise AssertionError("manual без маршрута не отмечен непроверенным источником с причиной настройки.")
+        if state["index_sync"]["checked_sources"] != ["TEST-INDEX-ONLY"]:
+            raise AssertionError("Доступный источник не проверен в том же проходе.")
+        if any(task["id"] == "TEST-FETCH" for task in state["queues"]["fetch"]):
+            raise AssertionError("Получение из непроверенного источника не отложено.")
+        if not any(task["id"] == "TEST-FETCH" for task in state["environment_deferred"]):
+            raise AssertionError("Отложенное получение не сохранено в состоянии прохода.")
 
     return 0
 
@@ -2109,7 +2128,384 @@ def test_captured_snapshot_still_needs_processing() -> None:
             raise AssertionError("Проверенное получение создало обязательную повторную сверку.")
 
 
+def write_environment_index_adapter(root: Path) -> None:
+    """Index adapter whose availability and coverage depend on local markers."""
+    write(
+        root / "index-adapter.py",
+        """
+        import json
+        import sys
+        from pathlib import Path
+
+        operation, source_id = sys.argv[1:]
+        items_path = Path("knowledge/data/test-index-only/items.yml")
+        message = "Индекс тестового источника обновлён."
+        if operation == "probe":
+            status = "technical-unavailable" if Path(".local/offline").exists() else "ready"
+            message = "Источник недоступен из этой сети." if status != "ready" else "Профиль готов."
+        elif operation == "index":
+            status = "unchanged"
+            if Path(".local/partial").exists():
+                text = items_path.read_text(encoding="utf-8")
+                head, _, rest = text.partition("  - id: TEST-INDEX-ONLY-METADATA")
+                _, _, tail = rest.partition("  - id: ")
+                items_path.write_text(head + "  - id: " + tail, encoding="utf-8")
+                status = "partial"
+            if Path(".local/damage").exists():
+                items_path.write_text("items: [\\n", encoding="utf-8")
+                for name in ("statements.yml", "material.txt"):
+                    target = Path("knowledge/data/test-index-only/units/extra") / name
+                    if target.exists():
+                        target.unlink()
+                print("Сеть недоступна.", file=sys.stderr)
+                raise SystemExit(4)
+        else:
+            raise SystemExit(3)
+        print(json.dumps({
+            "contract_version": 2,
+            "operation": operation,
+            "source_id": source_id,
+            "adapter": "builtin.index",
+            "status": status,
+            "message": message,
+            "artifacts": [],
+        }))
+        """,
+    )
+
+
+def load_yaml_file(path: Path) -> object:
+    import yaml
+
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def test_environment_limit_narrows_only_dependent_work() -> None:
+    """ФТ-015, ФТ-017, ФТ-022, ДТ-014 и ДТ-015: недоступность одного источника."""
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        reject_automated_work(root, keep_blocked=False)
+        write_environment_index_adapter(root)
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        state_path = root / ".local" / "state" / "corpus-pipeline.json"
+        index_only = root / "knowledge" / "data" / "test-index-only"
+        baseline_path = index_only / "index-baseline.yml"
+
+        run(root, "--run-pipeline")
+        baseline = load_yaml_file(baseline_path)
+        if set(baseline["units"]) != {"TEST-INDEX-ONLY-METADATA", "TEST-INDEX-ONLY-SELECTED"}:
+            raise AssertionError("Рассмотренная база не сохранила состав источника.")
+        if not baseline["checked_at"] or not baseline["reviewed_at"]:
+            raise AssertionError("База не сохранила даты проверки и рассмотрения.")
+        if not (root / "knowledge" / "data" / "test" / "index-baseline.yml").is_file():
+            raise AssertionError("База второго источника не записана.")
+        baseline_bytes = baseline_path.read_bytes()
+        items_bytes = (index_only / "items.yml").read_bytes()
+        validator = [sys.executable, str(VALIDATOR), "knowledge"]
+        if subprocess.run(validator, cwd=root, capture_output=True, text=True).returncode != 0:
+            raise AssertionError("Валидатор раскладки отклонил записанную контроллером базу.")
+        baseline_path.write_text(baseline_path.read_text(encoding="utf-8") + "environment: offline\n", encoding="utf-8")
+        rejected = subprocess.run(validator, cwd=root, capture_output=True, text=True)
+        if rejected.returncode == 0 or "unsupported fields: environment" not in rejected.stdout + rejected.stderr:
+            raise AssertionError("Валидатор пропустил сведения о среде в отслеживаемой базе.")
+        baseline_path.write_bytes(baseline_bytes)
+
+        # Источник недоступен в этой среде: остальная работа и глобальные стадии идут.
+        write(root / ".local" / "offline", "yes\n")
+        limited = run(root, "--run-pipeline", expected=21)
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        if state["status"] != "environment_limited" or "index_refresh_incomplete" in limited.stdout:
+            raise AssertionError("Недоступный источник не дал итог environment_limited.")
+        if not {"concepts", "impact_audit", "apply_changes", "corpus_validation"} <= set(state["completed_global_stages"]):
+            raise AssertionError("Глобальные стадии не выполнены по проверенной части.")
+        unchecked = state["owner_summary"]["unchecked_sources"]
+        if [entry["source_id"] for entry in unchecked] != ["TEST-INDEX-ONLY"]:
+            raise AssertionError("Сводка владельца не назвала непроверенный источник.")
+        if unchecked[0]["limitation_kind"] != "environment" or unchecked[0]["last_checked_at"] != baseline["checked_at"]:
+            raise AssertionError("Сводка не показала вид ограничения и дату последней проверки.")
+        if baseline_path.read_bytes() != baseline_bytes or (index_only / "items.yml").read_bytes() != items_bytes:
+            raise AssertionError("Недоступность изменила базу или индекс непроверенного источника.")
+        if "offline" in baseline_path.read_text(encoding="utf-8") or "сети" in baseline_path.read_text(encoding="utf-8"):
+            raise AssertionError("Сведения о среде попали в отслеживаемую базу.")
+        limited_run_id = state["run_id"]
+
+        # Доступ восстановлен: тот же проход доделывает отложенное.
+        (root / ".local" / "offline").unlink()
+        run(root, "--run-pipeline")
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        if state["run_id"] != limited_run_id or state["status"] != "completed":
+            raise AssertionError("Повторный запуск не продолжил проход с ограничением среды.")
+        if load_yaml_file(baseline_path)["checked_at"] == baseline["checked_at"]:
+            raise AssertionError("Дата успешной проверки источника не обновлена.")
+
+        # Другая среда без локального состояния получила нерассмотренное изменение из Git.
+        items_path = index_only / "items.yml"
+        items_path.write_text(
+            items_path.read_text(encoding="utf-8").replace('title: "Только в индексе"', 'title: "Новое название"'),
+            encoding="utf-8",
+        )
+        run(root, "--rebuild-indexes")
+        reviewed = load_yaml_file(baseline_path)
+        import shutil
+
+        shutil.rmtree(root / ".local")
+        subprocess.run(
+            [sys.executable, str(SCRIPT), "knowledge", "--operations", "operations.yml", "--run-pipeline"],
+            cwd=root, capture_output=True, text=True, check=False,
+        )
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        delta = next(
+            entry for entry in state["index_sync"]["delta"]["sources"] if entry["source_id"] == "TEST-INDEX-ONLY"
+        )
+        if delta["changed"] != ["TEST-INDEX-ONLY-METADATA"]:
+            raise AssertionError("Новая среда приняла нерассмотренное изменение за базу сравнения.")
+        after_failed_review = load_yaml_file(baseline_path)
+        if state["status"] == "completed" or (
+            after_failed_review["units"] != reviewed["units"]
+            or after_failed_review["reviewed_at"] != reviewed["reviewed_at"]
+        ):
+            raise AssertionError("База сдвинулась без рассмотрения дельты анализом влияния.")
+        if after_failed_review["checked_at"] == reviewed["checked_at"]:
+            raise AssertionError("Успешная проверка не обновила дату проверки источника.")
+
+
+def test_manual_global_stage_ignores_environment_deferred_work() -> None:
+    """ФТ-022 и ADR-0014: отложенная задача непроверенного источника не мешает ручному закрытию."""
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        reject_automated_work(root, keep_blocked=False)
+        items_path = root / "knowledge" / "data" / "test-index-only" / "items.yml"
+        items_text = items_path.read_text(encoding="utf-8")
+        head, marker, tail = items_text.partition("processing_scope: full")
+        items_path.write_text(
+            head.rpartition("workflow_stage: rejected")[0] + "workflow_stage: indexed\n    " + marker + tail,
+            encoding="utf-8",
+        )
+        write_environment_index_adapter(root)
+        remove_stage_commands(root, "concepts")
+        write(root / "concepts-evidence.md", "Понятия сверены по проверенной части.\n")
+        write(root / ".local" / "offline", "yes\n")
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        state_path = root / ".local" / "state" / "corpus-pipeline.json"
+
+        run(root, "--run-pipeline", expected=12)
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        deferred = [entry["id"] for entry in state["environment_deferred"]]
+        if deferred != ["TEST-INDEX-ONLY-SELECTED"] or state["queues"]["fetch"]:
+            raise AssertionError("Получение единицы непроверенного источника не отложено.")
+
+        run(root, "--complete-global-stage", "concepts", "--evidence", "concepts-evidence.md")
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        if state["queues"]["fetch"] or [entry["id"] for entry in state["environment_deferred"]] != deferred:
+            raise AssertionError("Ручное закрытие вернуло отложенную задачу в очередь.")
+
+        run(root, "--run-pipeline", expected=21)
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        if state["status"] != "environment_limited" or "corpus_validation" not in state["completed_global_stages"]:
+            raise AssertionError("После ручного закрытия проход не довёл глобальные стадии до конца.")
+
+
+def prepare_unit_fetch(root: Path, executable: str) -> None:
+    """Two fetch tasks of different sources and a per-unit fetch command (ADR-0015)."""
+    build_corpus(root)
+    reject_automated_work(root, keep_blocked=False)
+    test_items = root / "knowledge" / "data" / "test" / "items.yml"
+    test_items.write_text(
+        test_items.read_text(encoding="utf-8").replace("workflow_stage: rejected", "workflow_stage: needs_fetch", 1),
+        encoding="utf-8",
+    )
+    index_items = root / "knowledge" / "data" / "test-index-only" / "items.yml"
+    head, marker, tail = index_items.read_text(encoding="utf-8").partition("processing_scope: full")
+    index_items.write_text(
+        head.rpartition("workflow_stage: rejected")[0] + "workflow_stage: indexed\n    " + marker + tail,
+        encoding="utf-8",
+    )
+    write(
+        root / "fetch-unit.py",
+        """
+        import sys
+        from pathlib import Path
+
+        import yaml
+
+        unit_id, source_id = sys.argv[1:]
+        marker = Path(".local/fail-units")
+        if marker.exists() and unit_id in marker.read_text(encoding="utf-8").split():
+            print("Единица недоступна.", file=sys.stderr)
+            raise SystemExit(5)
+        source_items = Path("knowledge/data") / {"TEST": "test", "TEST-INDEX-ONLY": "test-index-only"}[source_id]
+        for path in (source_items / "items.yml", Path("knowledge/index/items.yml")):
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            for row in data["items"]:
+                if row["id"] == unit_id:
+                    row["workflow_stage"] = "rejected"
+            path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        """,
+    )
+    operations = root / "operations.yml"
+    addition = (
+        "  fetch:\n"
+        "    commands:\n"
+        "      - id: fetch-unit\n"
+        "        scope: unit\n"
+        "        argv:\n"
+        f"          - {executable}\n"
+        "          - fetch-unit.py\n"
+        "          - \"{unit_id}\"\n"
+        "          - \"{source_id}\"\n"
+        "        working_directory: .\n"
+        "        write_paths:\n"
+        "          - knowledge\n"
+        "        required: true\n"
+    )
+    operations.write_text(
+        operations.read_text(encoding="utf-8").replace("\nadapters:\n", f"\n{addition}adapters:\n"),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+
+
+def test_unit_command_failure_defers_only_that_unit() -> None:
+    """ФТ-015 (критерий 5), ФТ-022 и ADR-0015: сбой команды по одной единице."""
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        prepare_unit_fetch(root, sys.executable)
+        state_path = root / ".local" / "state" / "corpus-pipeline.json"
+        write(root / ".local" / "fail-units", "TEST-INDEX-ONLY-SELECTED\n")
+
+        limited = run(root, "--run-pipeline", expected=21)
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        failures = [entry for entry in state["environment_deferred"] if entry["reason"] == "command_failed"]
+        if [(entry["id"], entry["scope"], entry["kind"]) for entry in failures] != [
+            ("TEST-INDEX-ONLY-SELECTED", "unit", "failure")
+        ]:
+            raise AssertionError("Сбой команды отложил не только сбойную единицу.")
+        if "needs_fetch" in (root / "knowledge" / "data" / "test" / "items.yml").read_text(encoding="utf-8"):
+            raise AssertionError("Единица другого источника не обработана после сбоя.")
+        if "corpus_validation" not in state["completed_global_stages"]:
+            raise AssertionError("Глобальные стадии не выполнены после сбоя отдельной единицы.")
+        if [entry["id"] for entry in state["owner_summary"]["deferred_units"]] != ["TEST-INDEX-ONLY-SELECTED"]:
+            raise AssertionError("Сводка владельца не перечислила отложенную единицу.")
+        if "задач, отложенных после сбоя команды проекта: 1" not in limited.stdout:
+            raise AssertionError("Отчёт не показал сбой команды проекта.")
+        run_id = state["run_id"]
+
+        run(root, "--run-pipeline", expected=21)
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        failure = state["environment_deferred"][0]
+        if state["run_id"] != run_id or failure["consecutive_failures"] != 2 or not failure["repeated"]:
+            raise AssertionError("Повторный сбой не отмечен как повторяющийся в том же проходе.")
+
+        (root / ".local" / "fail-units").unlink()
+        run(root, "--run-pipeline")
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        if state["status"] != "completed" or state["environment_deferred"] or state["command_failures"]:
+            raise AssertionError("Следующая попытка не доделала отложенную единицу.")
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        prepare_unit_fetch(root, "/nonexistent/kc-tool")
+        run(root, "--run-pipeline", expected=21)
+        state = json.loads((root / ".local" / "state" / "corpus-pipeline.json").read_text(encoding="utf-8"))
+        kinds = {(entry["reason"], entry["kind"]) for entry in state["environment_deferred"]}
+        if kinds != {("command_unavailable", "environment")} or len(state["environment_deferred"]) != 2:
+            raise AssertionError("Отсутствующий инструмент не признан ограничением среды по каждой единице.")
+
+
+def test_partial_answer_is_not_removal() -> None:
+    """ДТ-014: единица, которой нет в частичном ответе, не считается исчезнувшей."""
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        reject_automated_work(root, keep_blocked=False)
+        write_environment_index_adapter(root)
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        run(root, "--run-pipeline")
+        write(root / ".local" / "partial", "yes\n")
+        run(root, "--run-pipeline", expected=21)
+        state = json.loads((root / ".local" / "state" / "corpus-pipeline.json").read_text(encoding="utf-8"))
+        delta = next(
+            entry for entry in state["index_sync"]["delta"]["sources"] if entry["source_id"] == "TEST-INDEX-ONLY"
+        )
+        if delta["removed"] or delta["unobserved"] != ["TEST-INDEX-ONLY-METADATA"]:
+            raise AssertionError("Частичный ответ превратил необследованную единицу в исчезнувшую.")
+        partial = state["index_sync"]["partial_sources"]
+        if [entry["source_id"] for entry in partial] != ["TEST-INDEX-ONLY"] or partial[0].get(
+            "restored_units"
+        ) != ["TEST-INDEX-ONLY-METADATA"]:
+            raise AssertionError("Частичная проверка или восстановление единицы не показаны.")
+        baseline = load_yaml_file(root / "knowledge" / "data" / "test-index-only" / "index-baseline.yml")
+        if "TEST-INDEX-ONLY-METADATA" not in baseline["units"]:
+            raise AssertionError("Необследованная единица выпала из базы сравнения.")
+        # ADR-0016: единица возвращена в индекс источника и в общий индекс корпуса.
+        items_text = (root / "knowledge" / "data" / "test-index-only" / "items.yml").read_text(encoding="utf-8")
+        index_text = (root / "knowledge" / "index" / "items.yml").read_text(encoding="utf-8")
+        if "TEST-INDEX-ONLY-METADATA" not in items_text or "TEST-INDEX-ONLY-METADATA" not in index_text:
+            raise AssertionError("Частичный ответ убрал единицу из индекса источника или корпуса.")
+        (root / ".local" / "partial").unlink()
+        subprocess.run(
+            [sys.executable, str(SCRIPT), "knowledge", "--operations", "operations.yml", "--run-pipeline"],
+            cwd=root, capture_output=True, text=True, check=False,
+        )
+        state = json.loads((root / ".local" / "state" / "corpus-pipeline.json").read_text(encoding="utf-8"))
+        delta = next(
+            entry for entry in state["index_sync"]["delta"]["sources"] if entry["source_id"] == "TEST-INDEX-ONLY"
+        )
+        if delta["removed"]:
+            raise AssertionError("Следующий полный проход признал восстановленную единицу исчезнувшей.")
+
+
+def test_failed_index_operation_restores_metadata() -> None:
+    """ADR-0016 и ОГР-003: неуспешная операция не отнимает индекс и утверждения."""
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        build_corpus(root)
+        reject_automated_work(root, keep_blocked=False)
+        write_environment_index_adapter(root)
+        extra = root / "knowledge" / "data" / "test-index-only" / "units" / "extra"
+        write(extra / "statements.yml", "statements: []\n")
+        write(extra / "material.txt", "Первичный материал.\n")
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        items_path = root / "knowledge" / "data" / "test-index-only" / "items.yml"
+        items_bytes = items_path.read_bytes()
+        statements_bytes = (extra / "statements.yml").read_bytes()
+        write(root / ".local" / "damage", "yes\n")
+        subprocess.run(
+            [sys.executable, str(SCRIPT), "knowledge", "--operations", "operations.yml", "--run-pipeline"],
+            cwd=root, capture_output=True, text=True, check=False,
+        )
+        if items_path.read_bytes() != items_bytes or (extra / "statements.yml").read_bytes() != statements_bytes:
+            raise AssertionError("Неуспешная операция оставила повреждённый индекс или удалённые утверждения.")
+        state = json.loads((root / ".local" / "state" / "corpus-pipeline.json").read_text(encoding="utf-8"))
+        entry = next(
+            item for item in state["index_sync"]["unchecked_sources"] if item["source_id"] == "TEST-INDEX-ONLY"
+        )
+        if set(entry.get("restored_paths", [])) != {
+            "knowledge/data/test-index-only/items.yml",
+            "knowledge/data/test-index-only/units/extra/statements.yml",
+        }:
+            raise AssertionError("Состояние не перечислило восстановленные файлы.")
+        if entry["kind"] != "failure" or entry.get("deleted_paths") != [
+            "knowledge/data/test-index-only/units/extra/material.txt"
+        ]:
+            raise AssertionError("Удаление материала не показано как сбой источника.")
+        if entry.get("index_modified"):
+            raise AssertionError("Восстановленный индекс помечен как изменённый.")
+
+
 if __name__ == "__main__":
     test_empty_setup_resumes_with_real_validation()
     test_captured_snapshot_still_needs_processing()
+    test_environment_limit_narrows_only_dependent_work()
+    test_manual_global_stage_ignores_environment_deferred_work()
+    test_partial_answer_is_not_removal()
+    test_failed_index_operation_restores_metadata()
+    test_unit_command_failure_defers_only_that_unit()
     raise SystemExit(main())
